@@ -1,2 +1,10 @@
+.bsp
+.idea
+.metals
+.vscode
+target
+project
+!project/build.properties
+!project/plugins.sbt
 *.class
 *.log
