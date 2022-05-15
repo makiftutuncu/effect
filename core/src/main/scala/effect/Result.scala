@@ -14,22 +14,5 @@ object Result {
 
   def error[A](throwable: Throwable): Result[A] = Error(Left(throwable))
 
-  def from[A](t: Try[A]): Result[A] = t.fold(error, value)
-
-  def from[A](either: Either[Throwable, E]): Result[A] = either.fold(error, error)
-
-  extension [A](a: A)
-    def toResult: Result[A] = value(a)
-
-  extension [A](e: E)
-    def toResult: Result[A] = error(e)
-
-  extension [A](throwable: Throwable)
-    def toResult: Result[A] = error(throwable)
-
-  extension [A](t: Try[A])
-    def toResult: Result[A] = from(t)
-
-  extension [A](either: Either[Throwable, E])
-    def toResult: Result[A] = from(either)
+  def from[A](either: Either[Throwable, E]): Result[A] = either.fold(throwable => Error(Left(throwable)), e => Error(Right(e)))
 }

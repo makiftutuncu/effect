@@ -34,8 +34,17 @@ object Main {
       throw new Exception("boom")
     }
 
+  val program6: Effect[(String, Int)] =
+    for {
+      fiber1  <- program2.fork
+      fiber2  <- program4.fork
+      _       <- Effect.suspend(println("Forked"))
+      result1 <- fiber1.join
+      result2 <- fiber2.join
+    } yield result1 -> result2
+
   def main(args: Array[String]): Unit =
-    (program3 zip program5).unsafeRun {
+    (program2 zipPar program3).unsafeRun {
       case Result.Error(Left(throwable)) =>
         println("Unhandled error!")
         throwable.printStackTrace()

@@ -15,17 +15,19 @@ sealed trait Effect[+A] { self =>
       b <- that
     } yield (a, b)
 
+  final def fork: Effect[Fiber[A]] = Effect.Fork(self)
+
+  final def zipPar[B](that: Effect[B]): Effect[(A, B)] =
+    for {
+      aFiber <- self.fork
+      b      <- that
+      a      <- aFiber.join
+    } yield (a, b)
+
   final def unsafeRun(callback: Result[A] => Unit): Unit = {
-    type Erased       = Effect[Any]
-    type Continuation = Any => Erased
-
-    def erase[A](effect: Effect[A]): Erased                                 = effect
-    def eraseContinuation[A, B](continuation: A => Effect[B]): Continuation = continuation.asInstanceOf[Continuation]
-    def cast[A](any: Any): A                                                = any.asInstanceOf[A]
-
-    var running: Boolean                           = true
-    var instruction: Erased                        = erase(self)
-    val continuations: mutable.Stack[Continuation] = mutable.Stack.empty
+    var running: Boolean                                 = true
+    var instruction: Effect[Any]                         = self
+    val continuations: mutable.Stack[Any => Effect[Any]] = mutable.Stack.empty
 
     def pause(): Unit = {
       running = false
@@ -42,7 +44,7 @@ sealed trait Effect[+A] { self =>
       if (continuations.isEmpty) {
         running = false
         println(s"TRACE: no more continuations, complete with $value")
-        callback(Result.value(cast(value)))
+        callback(Result.value(value.asInstanceOf[A]))
       } else {
         val continuation = continuations.pop()
         println(s"TRACE: next continuation with $value")
@@ -69,7 +71,7 @@ sealed trait Effect[+A] { self =>
               fail(error)
 
             case Effect.FlatMap(effect, continuation) =>
-              continuations.push(eraseContinuation(continuation))
+              continuations.push(continuation.asInstanceOf[Any => Effect[Any]])
               instruction = effect
 
             case Effect.Callback(register) =>
@@ -77,7 +79,7 @@ sealed trait Effect[+A] { self =>
               if (continuations.isEmpty) {
                 register { value =>
                   println(s"TRACE: complete callback with $value")
-                  callback(Result.value(cast(value)))
+                  callback(Result.value(value.asInstanceOf[A]))
                 }
               } else {
                 register { value =>
@@ -86,6 +88,11 @@ sealed trait Effect[+A] { self =>
                   resume()
                 }
               }
+
+            case Effect.Fork(effect) =>
+              val fiber = Fiber.Context(effect)
+              fiber.start()
+              nextContinuation(fiber)
           }
         }
       } catch {
@@ -116,4 +123,6 @@ object Effect {
   private[effect] final case class FlatMap[A, +B](effect: Effect[A], continuation: A => Effect[B]) extends Effect[B]
 
   private[effect] final case class Callback[+A](register: (A => Any) => Any) extends Effect[A]
+
+  private[effect] final case class Fork[+A](effect: Effect[A]) extends Effect[Fiber[A]]
 }
