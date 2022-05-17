@@ -10,9 +10,5 @@ enum Result[+A] {
 object Result {
   def value[A](a: A): Result[A] = Value(a)
 
-  def error[A](e: E): Result[A] = Error(Right(e))
-
-  def error[A](throwable: Throwable): Result[A] = Error(Left(throwable))
-
-  def from[A](either: Either[Throwable, E]): Result[A] = either.fold(throwable => Error(Left(throwable)), e => Error(Right(e)))
+  def error[A](error: Either[Throwable, E]): Result[A] = Error(error)
 }

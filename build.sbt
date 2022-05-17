@@ -20,8 +20,10 @@ inThisBuild(
 
 lazy val core = project in file("core")
 
-lazy val example = (project in file("example")).dependsOn(core)
+lazy val examples = (project in file("examples"))
+  .dependsOn(core)
+  .settings(fork := true)
 
 lazy val root = (project in file("."))
   .settings(name := "effect")
-  .aggregate(core, example)
+  .aggregate(core, examples)

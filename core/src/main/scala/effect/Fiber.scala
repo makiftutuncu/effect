@@ -1,100 +1,199 @@
 package effect
 
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.util.control.NonFatal
 
 sealed trait Fiber[+A] {
-  def start(): Unit
   def join: Effect[A]
 }
 
 object Fiber {
-  private[effect] final case class Context[A](effect: Effect[A]) extends Fiber[A] { self =>
-    private[effect] enum State {
-      case Running(callbacks: List[Result[A] => Any])
-      case Failed(error: Either[Throwable, E])
-      case Completed(value: A)
+  private val fiberIds: AtomicLong = AtomicLong(0L)
+
+  def apply[A](effect: Effect[A]): Fiber[A] = Context(fiberIds.getAndIncrement(), effect)
+
+  private[effect] final case class Context[A](id: Long, effect: Effect[A]) extends Fiber[A] { self =>
+    ExecutionContext.global.execute { () =>
+      trace(s"start looping")
+      loop()
     }
+
+    override def join: Effect[A] =
+      Effect.callback { callback =>
+        updateState(
+          ifRunning = { runningState =>
+            !state.compareAndSet(runningState, State.Running(runningState.callbacks :+ callback))
+          },
+          ifFailed = { failedState =>
+            callback(Result.error(failedState.error))
+            false
+          },
+          ifCompleted = { completedState =>
+            callback(Result.value(completedState.value))
+            false
+          }
+        )
+      }
+
+    override def toString: String = s"Fiber($id, $effect)"
+
+    private enum State(val name: String) {
+      case Running(callbacks: List[Result[A] => Any]) extends State("running")
+      case Failed(error: Either[Throwable, E])        extends State("failed")
+      case Completed(value: A)                        extends State("completed")
+    }
+
+    private var looping: Boolean                                 = true
+    private var instruction: Effect[Any]                         = effect
+    private val continuations: mutable.Stack[Any => Effect[Any]] = mutable.Stack.empty
 
     private val state: AtomicReference[State] = AtomicReference(State.Running(List.empty))
 
-    private def complete(value: A): Unit = {
-      var running = true
+    private inline def trace(message: String): Unit = println(s"[fiber-$id] $message")
 
-      while (running) {
+    private inline def pauseLooping(): Unit = {
+      looping = false
+      trace("pause looping")
+    }
+
+    private inline def resumeLooping(): Unit = {
+      looping = true
+      trace("resume looping")
+      loop()
+    }
+
+    private inline def nextContinuationInLoop(value: Any): Unit =
+      if (continuations.isEmpty) {
+        looping = false
+        trace("stop looping")
+        completeFiber(value.asInstanceOf[A])
+      } else {
+        val continuation = continuations.pop()
+        trace(s"next continuation: $value")
+        instruction = continuation(value)
+      }
+
+    private inline def handleErrorOrFailLoop(error: Either[Throwable, E]): Unit = {
+      val nextFold = findNextFold()
+      if (nextFold != null) {
+        instruction = nextFold.ifError(error)
+      } else {
+        looping = false
+        trace("fail looping")
+        failFiber(error)
+      }
+    }
+
+    private inline def updateState(
+      ifRunning: State.Running => Boolean = { s =>
+        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to running!")
+      },
+      ifFailed: State.Failed => Boolean = { s =>
+        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to failed!")
+      },
+      ifCompleted: State.Completed => Boolean = { s =>
+        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to completed!")
+      }
+    ): Unit = {
+      var trying = true
+
+      while (trying) {
         val oldState = state.get()
 
         oldState match {
-          case State.Running(callbacks) =>
-            if (state.compareAndSet(oldState, State.Completed(value))) {
-              callbacks.foreach { callback => callback(Result.value(value)) }
-              running = false
-            }
-
-          case State.Failed(_) =>
-            throw new IllegalStateException("Failed fiber cannot be completed with a value!")
-
-          case State.Completed(_) =>
-            throw new IllegalStateException("Fiber cannot be completed more than once!")
+          case s: State.Running   => trying = ifRunning(s)
+          case s: State.Failed    => trying = ifFailed(s)
+          case s: State.Completed => trying = ifCompleted(s)
         }
       }
     }
 
-    private def await(callback: A => Any): Unit = {
-      var running = true
+    private inline def completeFiber(value: A): Unit =
+      updateState(ifRunning = { runningState =>
+        if (state.compareAndSet(runningState, State.Completed(value))) {
+          trace(s"complete fiber: $value")
+          runningState.callbacks.foreach { callback => callback(Result.value(value)) }
+          false
+        } else {
+          true
+        }
+      })
 
-      while (running) {
-        val oldState = state.get()
+    private inline def failFiber(error: Either[Throwable, E]): Unit =
+      updateState(ifRunning = { runningState =>
+        if (state.compareAndSet(runningState, State.Failed(error))) {
+          trace(s"fail fiber: $error")
+          false
+        } else {
+          true
+        }
+      })
 
-        oldState match {
-          case State.Running(callbacks) =>
-            val newCallback: Result[A] => Any = {
-              case Result.Error(error) => fail(error)
-              case Result.Value(value) => callback(value)
-            }
+    private inline def findNextFold(): Effect.Fold[Any, Any] = {
+      var trying       = true
+      var continuation = null.asInstanceOf[Any => Effect[Any]]
 
-            running = !state.compareAndSet(oldState, State.Running(callbacks :+ newCallback))
-
-          case State.Completed(value) =>
-            callback(value)
-            running = false
-
-          case State.Failed(_) =>
-            throw new IllegalStateException("Failed fiber cannot be awaited!")
+      while (trying) {
+        if (continuations.isEmpty) {
+          trying = false
+        } else {
+          continuation = continuations.pop()
+          trying = !continuation.isInstanceOf[Effect.Fold[_, _]]
         }
       }
+
+      continuation.asInstanceOf[Effect.Fold[Any, Any]]
     }
 
-    private def fail(error: Either[Throwable, E]): Unit = {
-      var running = true
+    private def loop(): Unit =
+      try {
+        while (looping) {
+          instruction match {
+            case Effect.Value(value) =>
+              nextContinuationInLoop(value)
 
-      while (running) {
-        val oldState = state.get()
+            case Effect.Suspend(getValue) =>
+              nextContinuationInLoop(getValue())
 
-        oldState match {
-          case State.Completed(value) =>
-            throw new IllegalStateException("Completed fiber cannot be failed!")
+            case Effect.Error(error) =>
+              handleErrorOrFailLoop(error)
 
-          case State.Running(callbacks) =>
-            running = !state.compareAndSet(oldState, State.Failed(error))
+            case Effect.FlatMap(effect, continuation) =>
+              continuations.push(continuation.asInstanceOf[Any => Effect[Any]])
+              instruction = effect
 
-          case State.Failed(error) =>
-            throw new IllegalStateException("Failed fiber cannot be failed again!")
+            case Effect.Callback(register) =>
+              pauseLooping()
+              if (continuations.isEmpty) {
+                register {
+                  case Result.Error(error) => handleErrorOrFailLoop(error)
+                  case Result.Value(value) => completeFiber(value.asInstanceOf[A])
+                }
+              } else {
+                register {
+                  case Result.Error(error) =>
+                    handleErrorOrFailLoop(error)
+
+                  case Result.Value(value) =>
+                    instruction = Effect.Value(value)
+                    resumeLooping()
+                }
+              }
+
+            case Effect.Fork(effect) =>
+              nextContinuationInLoop(Fiber(effect))
+
+            case fold @ Effect.Fold(effect, ifError, ifValue) =>
+              continuations.push(fold.asInstanceOf[Any => Effect[Any]])
+              instruction = effect
+          }
         }
+      } catch {
+        case NonFatal(throwable) =>
+          handleErrorOrFailLoop(Left(throwable))
       }
-    }
-
-    override def start(): Unit =
-      ExecutionContext.global.execute { () =>
-        effect.unsafeRun {
-          case Result.Value(value) => complete(value)
-          case Result.Error(error) => fail(error)
-        }
-      }
-
-    override def join: Effect[A] = Effect.callback(await)
   }
 }
