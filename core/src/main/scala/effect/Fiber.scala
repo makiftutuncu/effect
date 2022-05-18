@@ -3,7 +3,7 @@ package effect
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import scala.collection.mutable
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.control.NonFatal
 
 sealed trait Fiber[+A] {
@@ -13,10 +13,19 @@ sealed trait Fiber[+A] {
 object Fiber {
   private val fiberIds: AtomicLong = AtomicLong(0L)
 
-  def apply[A](effect: Effect[A]): Fiber[A] = Context(fiberIds.getAndIncrement(), effect)
+  private[effect] def apply[A](effect: Effect[A], executor: ExecutionContextExecutor): Fiber[A] =
+    Context(fiberIds.getAndIncrement(), effect, executor)
 
-  private[effect] final case class Context[A](id: Long, effect: Effect[A]) extends Fiber[A] { self =>
-    ExecutionContext.global.execute { () =>
+  private final case class Context[A](id: Long, startingEffect: Effect[A], startingExecutor: ExecutionContextExecutor) extends Fiber[A] {
+    self =>
+    private var looping: Boolean                                 = true
+    private var instruction: Effect[Any]                         = startingEffect
+    private var executor: ExecutionContextExecutor               = startingExecutor
+    private val continuations: mutable.Stack[Any => Effect[Any]] = mutable.Stack.empty
+
+    private val state: AtomicReference[State] = AtomicReference(State.Running(List.empty))
+
+    executor.execute { () =>
       trace(s"start looping")
       loop()
     }
@@ -38,19 +47,13 @@ object Fiber {
         )
       }
 
-    override def toString: String = s"Fiber($id, $effect)"
+    override def toString: String = s"Fiber($id, $startingEffect)"
 
     private enum State(val name: String) {
       case Running(callbacks: List[Result[A] => Any]) extends State("running")
       case Failed(error: Either[Throwable, E])        extends State("failed")
       case Completed(value: A)                        extends State("completed")
     }
-
-    private var looping: Boolean                                 = true
-    private var instruction: Effect[Any]                         = effect
-    private val continuations: mutable.Stack[Any => Effect[Any]] = mutable.Stack.empty
-
-    private val state: AtomicReference[State] = AtomicReference(State.Running(List.empty))
 
     private inline def trace(message: String): Unit = println(s"[fiber-$id] $message")
 
@@ -184,11 +187,16 @@ object Fiber {
               }
 
             case Effect.Fork(effect) =>
-              nextContinuationInLoop(Fiber(effect))
+              nextContinuationInLoop(Fiber(effect, executor))
 
             case fold @ Effect.Fold(effect, ifError, ifValue) =>
               continuations.push(fold.asInstanceOf[Any => Effect[Any]])
               instruction = effect
+
+            case Effect.On(newExecutor) =>
+              // TODO: Need to switch back to `executor` after `effect` is run.
+              executor = newExecutor
+              nextContinuationInLoop(())
           }
         }
       } catch {

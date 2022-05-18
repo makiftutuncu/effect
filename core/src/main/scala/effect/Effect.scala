@@ -4,6 +4,7 @@ import java.util.concurrent.CountDownLatch
 
 import scala.annotation.{tailrec, targetName}
 import scala.collection.mutable
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.control.NonFatal
 
 sealed trait Effect[+A] { self =>
@@ -11,7 +12,7 @@ sealed trait Effect[+A] { self =>
 
   override def toString: String = describe()
 
-  // --- Core methods ---
+  // --- Primitive methods ---
 
   final def flatMap[B](f: A => Effect[B]): Effect[B] =
     Effect.FlatMap(self, f)
@@ -21,6 +22,9 @@ sealed trait Effect[+A] { self =>
 
   final def fold[B](ifError: Either[Throwable, E] => Effect[B], ifValue: A => Effect[B]): Effect[B] =
     Effect.Fold(self, ifError, ifValue)
+
+  final def on(executor: ExecutionContextExecutor): Effect[Unit] =
+    Effect.On(executor)
 
   // --- Derived methods ---
 
@@ -67,7 +71,7 @@ sealed trait Effect[+A] { self =>
 
   // -- Unsafe methods ---
 
-  final def unsafeRun(): Result[A] = {
+  final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor): Result[A] = {
     val latch  = new CountDownLatch(1)
     var result = null.asInstanceOf[Result[A]]
     val effect = self.fold(
@@ -82,13 +86,15 @@ sealed trait Effect[+A] { self =>
           latch.countDown()
         }
     )
-    Fiber(effect)
+    Fiber(effect, executor)
     latch.await()
     result
   }
 }
 
 object Effect {
+  private val defaultExecutor: ExecutionContextExecutor = ExecutionContext.global
+
   // --- Builders ---
 
   def value[A](a: A): Effect[A] = Value(a)
@@ -99,7 +105,7 @@ object Effect {
 
   def callback[A](register: (Result[A] => Any) => Any): Effect[A] = Callback(register)
 
-  // --- Effect declarations ---
+  // --- Effect primitives ---
 
   private[effect] final case class Value[+A](value: A) extends Effect[A] {
     override protected def describe(): String = s"Value($value)"
@@ -131,5 +137,9 @@ object Effect {
     override protected def describe(): String = "Fold()"
 
     override def apply(a: A): Effect[B] = ifValue(a)
+  }
+
+  private[effect] final case class On(executor: ExecutionContextExecutor) extends Effect[Unit] {
+    override protected def describe(): String = s"On($executor)"
   }
 }
