@@ -11,7 +11,7 @@ sealed trait Effect[+A] { self =>
 
   override def toString: String = describe()
 
-  // --- Core operators ---
+  // --- Core methods ---
 
   final def flatMap[B](f: A => Effect[B]): Effect[B] =
     Effect.FlatMap(self, f)
@@ -22,7 +22,7 @@ sealed trait Effect[+A] { self =>
   final def fold[B](ifError: Either[Throwable, E] => Effect[B], ifValue: A => Effect[B]): Effect[B] =
     Effect.Fold(self, ifError, ifValue)
 
-  // --- Derived operators ---
+  // --- Derived methods ---
 
   final def map[B](f: A => B): Effect[B] =
     flatMap(a => Effect.Value(f(a)))
@@ -65,7 +65,7 @@ sealed trait Effect[+A] { self =>
   final def handleError[AA >: A](handler: E => AA): Effect[AA] =
     handleErrorEffect(e => Effect.Value(handler(e)))
 
-  // -- Unsafe area ---
+  // -- Unsafe methods ---
 
   final def unsafeRun(): Result[A] = {
     val latch  = new CountDownLatch(1)
@@ -73,12 +73,12 @@ sealed trait Effect[+A] { self =>
     val effect = self.fold(
       error =>
         Effect.Value {
-          result = Result.error(error)
+          result = Result.Error(error)
           latch.countDown()
         },
       value =>
         Effect.Value {
-          result = Result.value(value)
+          result = Result.Value(value)
           latch.countDown()
         }
     )
@@ -89,6 +89,8 @@ sealed trait Effect[+A] { self =>
 }
 
 object Effect {
+  // --- Builders ---
+
   def value[A](a: A): Effect[A] = Value(a)
 
   def suspend[A](a: => A): Effect[A] = Suspend(() => a)
@@ -96,6 +98,8 @@ object Effect {
   def error[A](e: E): Effect[A] = Error(Right(e))
 
   def callback[A](register: (Result[A] => Any) => Any): Effect[A] = Callback(register)
+
+  // --- Effect declarations ---
 
   private[effect] final case class Value[+A](value: A) extends Effect[A] {
     override protected def describe(): String = s"Value($value)"

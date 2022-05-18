@@ -1,7 +1,7 @@
 package effect
 
 trait EffectApp {
-  def effect(args: Array[String]): Effect[Any]
+  def mainEffect(args: Array[String]): Effect[Any]
 
   protected def getExitCode(result: Result[Any]): Int =
     result match {
@@ -20,7 +20,7 @@ trait EffectApp {
 
   def main(args: Array[String]): Unit = {
     // TODO: Need to interrupt on shutdown hook
-    val result   = effect(args).unsafeRun()
+    val result   = mainEffect(args).unsafeRun()
     val exitCode = getExitCode(result)
 
     try {

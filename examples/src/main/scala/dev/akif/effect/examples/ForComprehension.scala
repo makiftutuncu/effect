@@ -3,7 +3,7 @@ package dev.akif.effect.examples
 import effect.{Effect, EffectApp, Result}
 
 object ForComprehension extends EffectApp {
-  override def effect(args: Array[String]): Effect[Any] =
+  override def mainEffect(args: Array[String]): Effect[Any] =
     for {
       int      <- Effect.value(42)
       string   <- Effect.value("hello")
@@ -12,7 +12,7 @@ object ForComprehension extends EffectApp {
         println("Async started")
         Thread.sleep(100)
         println(s"Done: $combined")
-        complete(Result.value(1))
+        complete(Result.Value(1))
       }
       result <- Effect.value(s"Result is $asyncResult")
     } yield {

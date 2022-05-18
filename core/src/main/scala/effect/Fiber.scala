@@ -28,11 +28,11 @@ object Fiber {
             !state.compareAndSet(runningState, State.Running(runningState.callbacks :+ callback))
           },
           ifFailed = { failedState =>
-            callback(Result.error(failedState.error))
+            callback(Result.Error(failedState.error))
             false
           },
           ifCompleted = { completedState =>
-            callback(Result.value(completedState.value))
+            callback(Result.Value(completedState.value))
             false
           }
         )
@@ -115,7 +115,7 @@ object Fiber {
       updateState(ifRunning = { runningState =>
         if (state.compareAndSet(runningState, State.Completed(value))) {
           trace(s"complete fiber: $value")
-          runningState.callbacks.foreach { callback => callback(Result.value(value)) }
+          runningState.callbacks.foreach { callback => callback(Result.Value(value)) }
           false
         } else {
           true

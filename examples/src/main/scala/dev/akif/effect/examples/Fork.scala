@@ -8,7 +8,7 @@ object Fork extends EffectApp {
   val program2: Effect[Int] =
     Effect.error(E(1, "error"))
 
-  override def effect(args: Array[String]): Effect[Any] =
+  override def mainEffect(args: Array[String]): Effect[Any] =
     for {
       fiber1  <- program1.fork
       fiber2  <- program2.fork
