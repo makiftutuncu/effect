@@ -6,7 +6,7 @@ object Fork extends EffectApp {
   val program1: Effect[String] = Effect.value("hello")
 
   val program2: Effect[Int] =
-    Effect.error(E(1, "error"))
+    Effect.error(E("error"))
 
   override def mainEffect(args: Array[String]): Effect[Any] =
     for {

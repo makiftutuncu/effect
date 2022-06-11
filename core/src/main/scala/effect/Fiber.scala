@@ -37,7 +37,10 @@ object Fiber {
             !state.compareAndSet(runningState, State.Running(runningState.callbacks :+ callback))
           },
           ifFailed = { failedState =>
-            callback(Result.Error(failedState.error))
+            failedState.error match {
+              case Left(throwable) => callback(Result.UnexpectedError(throwable))
+              case Right(e)        => callback(Result.Error(e))
+            }
             false
           },
           ifCompleted = { completedState =>
@@ -57,17 +60,6 @@ object Fiber {
 
     private inline def trace(message: String): Unit = println(s"[fiber-$id] $message")
 
-    private inline def pauseLooping(): Unit = {
-      looping = false
-      trace("pause looping")
-    }
-
-    private inline def resumeLooping(): Unit = {
-      looping = true
-      trace("resume looping")
-      loop()
-    }
-
     private inline def nextContinuationInLoop(value: Any): Unit =
       if (continuations.isEmpty) {
         looping = false
@@ -86,7 +78,14 @@ object Fiber {
       } else {
         looping = false
         trace("fail looping")
-        failFiber(error)
+        updateState(ifRunning = { runningState =>
+          if (state.compareAndSet(runningState, State.Failed(error))) {
+            trace(s"fail fiber: $error")
+            false
+          } else {
+            true
+          }
+        })
       }
     }
 
@@ -125,16 +124,6 @@ object Fiber {
         }
       })
 
-    private inline def failFiber(error: Either[Throwable, E]): Unit =
-      updateState(ifRunning = { runningState =>
-        if (state.compareAndSet(runningState, State.Failed(error))) {
-          trace(s"fail fiber: $error")
-          false
-        } else {
-          true
-        }
-      })
-
     private inline def findNextFold(): Effect.Fold[Any, Any] = {
       var trying       = true
       var continuation = null.asInstanceOf[Any => Effect[Any]]
@@ -152,8 +141,8 @@ object Fiber {
     }
 
     private def loop(): Unit =
-      try {
-        while (looping) {
+      while (looping) {
+        try {
           instruction match {
             case Effect.Value(value) =>
               nextContinuationInLoop(value)
@@ -169,27 +158,29 @@ object Fiber {
               instruction = effect
 
             case Effect.Callback(register) =>
-              pauseLooping()
-              if (continuations.isEmpty) {
-                register {
-                  case Result.Error(error) => handleErrorOrFailLoop(error)
-                  case Result.Value(value) => completeFiber(value.asInstanceOf[A])
-                }
-              } else {
-                register {
-                  case Result.Error(error) =>
-                    handleErrorOrFailLoop(error)
+              looping = false
+              trace("pause looping")
+              register {
+                case Result.UnexpectedError(throwable) =>
+                  handleErrorOrFailLoop(Left(throwable))
 
-                  case Result.Value(value) =>
+                case Result.Error(e) =>
+                  handleErrorOrFailLoop(Right(e))
+
+                case Result.Value(value) =>
+                  if (continuations.isEmpty) {
+                    completeFiber(value.asInstanceOf[A])
+                  } else {
                     instruction = Effect.Value(value)
-                    resumeLooping()
-                }
+                    looping = true
+                    trace("resume looping")
+                  }
               }
 
             case Effect.Fork(effect) =>
               nextContinuationInLoop(Fiber(effect, executor))
 
-            case fold @ Effect.Fold(effect, ifError, ifValue) =>
+            case fold @ Effect.Fold(effect, _, _) =>
               continuations.push(fold.asInstanceOf[Any => Effect[Any]])
               instruction = effect
 
@@ -198,10 +189,10 @@ object Fiber {
               executor = newExecutor
               nextContinuationInLoop(())
           }
+        } catch {
+          case NonFatal(throwable) =>
+            handleErrorOrFailLoop(Left(throwable))
         }
-      } catch {
-        case NonFatal(throwable) =>
-          handleErrorOrFailLoop(Left(throwable))
       }
   }
 }
