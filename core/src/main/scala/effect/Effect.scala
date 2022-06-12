@@ -11,19 +11,16 @@ sealed trait Effect[+A] { self =>
   final def flatMap[B](f: A => Effect[B]): Effect[B] =
     Effect.FlatMap(self, f)
 
-  final def and[B](that: Effect[B]): Effect[B] =
-    flatMap(_ => that)
-
   final def map[B](f: A => B): Effect[B] =
     flatMap(a => Effect.Value(f(a)))
 
-  final def as[B](b: B): Effect[B] =
+  final def as[B](b: => B): Effect[B] =
     map(_ => b)
 
   final def fork: Effect[Fiber[A]] =
     Effect.Fork(self)
 
-  final def zip[B, C](that: Effect[B])(f: (A, B) => C): Effect[C] =
+  final def zip[B, C](that: => Effect[B])(f: (A, B) => C): Effect[C] =
     for {
       a <- self
       b <- that
@@ -31,7 +28,13 @@ sealed trait Effect[+A] { self =>
       f(a, b)
     }
 
-  final def zipPar[B, C](that: Effect[B])(f: (A, B) => C): Effect[C] =
+  final def also[B](that: => Effect[B]): Effect[A] =
+    zip(that)((a, _) => a)
+
+  final def and[B](that: => Effect[B]): Effect[B] =
+    zip(that)((_, b) => b)
+
+  final def zipPar[B, C](that: => Effect[B])(f: (A, B) => C): Effect[C] =
     for {
       aFiber <- self.fork
       b      <- that
@@ -40,10 +43,16 @@ sealed trait Effect[+A] { self =>
       f(a, b)
     }
 
-  final def tuple[B](that: Effect[B]): Effect[(A, B)] =
+  final def alsoPar[B](that: => Effect[B]): Effect[A] =
+    zipPar(that)((a, _) => a)
+
+  final def andPar[B](that: => Effect[B]): Effect[B] =
+    zipPar(that)((_, b) => b)
+
+  final def tuple[B](that: => Effect[B]): Effect[(A, B)] =
     zip(that)((a, b) => (a, b))
 
-  final def tuplePar[B](that: Effect[B]): Effect[(A, B)] =
+  final def tuplePar[B](that: => Effect[B]): Effect[(A, B)] =
     zipPar(that)((a, b) => (a, b))
 
   final def foldEffect[B](ifError: E => Effect[B], ifValue: A => Effect[B]): Effect[B] =
@@ -81,8 +90,13 @@ sealed trait Effect[+A] { self =>
   final def refineError(handler: Throwable => E): Effect[A] =
     recoverEffect(throwable => Effect.Error(Right(handler(throwable))))
 
-  final def on(executor: ExecutionContextExecutor): Effect[Unit] =
-    Effect.On(executor)
+  final def finalize(finalizer: => Effect[Any]): Effect[A] =
+    foldEffect(e => finalizer and Effect.Error(Right(e)), a => finalizer and Effect.Value(a)).recoverEffect(e =>
+      finalizer and Effect.Error(Left(e))
+    )
+
+  final def on(executor: ExecutionContextExecutor): Effect[A] =
+    Effect.On(self, executor)
 
   final def repeat(times: Int): Effect[Unit] =
     times match {
@@ -92,6 +106,12 @@ sealed trait Effect[+A] { self =>
 
   final def forever: Effect[Nothing] =
     self and self.forever
+
+  final def interruptible: Effect[A] =
+    Effect.SetInterruptible(self, true)
+
+  final def uninterruptible: Effect[A] =
+    Effect.SetInterruptible(self, false)
 
   final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor): Result[A] = {
     val latch  = new CountDownLatch(1)
@@ -112,7 +132,7 @@ sealed trait Effect[+A] { self =>
         latch.countDown()
       }
 
-    Fiber(effect, executor)
+    Fiber(effect, executor, None)
     latch.await()
     result
   }
@@ -123,11 +143,13 @@ object Effect {
 
   val unit: Effect[Unit] = Value(())
 
-  def value[A](a: A): Effect[A] = Value(a)
+  def value[A](a: => A): Effect[A] = Value(a)
 
   def suspend[A](a: => A): Effect[A] = Suspend(() => a)
 
   def error[A](e: E): Effect[A] = Error(Right(e))
+
+  private[effect] def unexpectedError[A](throwable: Throwable): Effect[A] = Error(Left(throwable))
 
   def callback[A](register: (Result[A] => Any) => Any): Effect[A] = Callback(register)
 
@@ -136,15 +158,19 @@ object Effect {
   }
 
   private[effect] final case class Suspend[+A](value: () => A) extends Effect[A] {
-    override def toString: String = s"Suspend($value)"
+    override def toString: String = s"Suspend"
   }
 
   private[effect] final case class Error(error: Either[Throwable, E]) extends Effect[Nothing] {
     override def toString: String = s"Error($error)"
   }
 
+  private[effect] object Interrupted extends Effect[Unit] {
+    override def toString: String = s"Interrupted"
+  }
+
   private[effect] final case class Callback[+A](register: (Result[A] => Any) => Any) extends Effect[A] {
-    override def toString: String = s"Callback()"
+    override def toString: String = s"Callback"
   }
 
   private[effect] final case class FlatMap[A, +B](effect: Effect[A], continuation: A => Effect[B]) extends Effect[B] {
@@ -163,7 +189,11 @@ object Effect {
     override def apply(a: A): Effect[B] = ifValue(a)
   }
 
-  private[effect] final case class On(executor: ExecutionContextExecutor) extends Effect[Unit] {
-    override def toString: String = s"On($executor)"
+  private[effect] final case class On[A](effect: Effect[A], executor: ExecutionContextExecutor) extends Effect[A] {
+    override def toString: String = s"On($effect, $executor)"
+  }
+
+  private[effect] final case class SetInterruptible[A](effect: Effect[A], isInterruptible: Boolean) extends Effect[A] {
+    override def toString: String = s"SetInterruptible($effect, $isInterruptible)"
   }
 }

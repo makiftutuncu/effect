@@ -1,6 +1,6 @@
 package effect
 
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong, AtomicReference}
 
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
@@ -8,22 +8,32 @@ import scala.util.control.NonFatal
 
 sealed trait Fiber[+A] {
   def join: Effect[A]
+
+  def interrupt: Effect[Unit]
 }
 
 object Fiber {
   private val fiberIds: AtomicLong = AtomicLong(0L)
 
-  private[effect] def apply[A](effect: Effect[A], executor: ExecutionContextExecutor): Fiber[A] =
-    Context(fiberIds.getAndIncrement(), effect, executor)
+  private[effect] def apply[A](effect: Effect[A], executor: ExecutionContextExecutor, parentId: Option[Long]): Fiber[A] =
+    Context(fiberIds.getAndIncrement(), effect, executor, parentId)
 
-  private final case class Context[A](id: Long, startingEffect: Effect[A], startingExecutor: ExecutionContextExecutor) extends Fiber[A] {
+  private final case class Context[A](
+    id: Long,
+    startingEffect: Effect[A],
+    startingExecutor: ExecutionContextExecutor,
+    parentId: Option[Long]
+  ) extends Fiber[A] {
     self =>
     private var looping: Boolean                                 = true
     private var instruction: Effect[Any]                         = startingEffect
     private var executor: ExecutionContextExecutor               = startingExecutor
     private val continuations: mutable.Stack[Any => Effect[Any]] = mutable.Stack.empty
 
-    private val state: AtomicReference[State] = AtomicReference(State.Running(List.empty))
+    private val state: AtomicReference[State]  = AtomicReference(State.Running(List.empty))
+    private val interrupted: AtomicBoolean     = AtomicBoolean(false)
+    private val isInterrupting: AtomicBoolean  = AtomicBoolean(false)
+    private val isInterruptible: AtomicBoolean = AtomicBoolean(true)
 
     executor.execute { () =>
       trace(s"start looping")
@@ -46,19 +56,29 @@ object Fiber {
           ifCompleted = { completedState =>
             callback(Result.Value(completedState.value))
             false
+          },
+          ifInterrupted = { _ =>
+            callback(Result.Interrupted)
+            false
           }
         )
       }
 
-    override def toString: String = s"Fiber($id, $startingEffect)"
+    override def interrupt: Effect[Unit] = {
+      trace("will interrupt")
+      Effect.Value(interrupted.set(true))
+    }
+
+    override def toString: String = parentId.fold(s"Fiber($id, $startingEffect)")(parent => s"Fiber($parent/$id, $startingEffect)")
 
     private enum State(val name: String) {
       case Running(callbacks: List[Result[A] => Any]) extends State("running")
       case Failed(error: Either[Throwable, E])        extends State("failed")
       case Completed(value: A)                        extends State("completed")
+      case Interrupted                                extends State("interrupted")
     }
 
-    private inline def trace(message: String): Unit = println(s"[fiber-$id] $message")
+    private inline def trace(message: String): Unit = println(s"[fiber ${parentId.fold(s"$id")(parent => s"$parent/$id")}] $message")
 
     private inline def nextContinuationInLoop(value: Any): Unit =
       if (continuations.isEmpty) {
@@ -89,6 +109,19 @@ object Fiber {
       }
     }
 
+    private inline def handleInterrupted(): Unit = {
+      looping = false
+      trace("interrupting")
+      updateState(ifRunning = { runningState =>
+        if (state.compareAndSet(runningState, State.Interrupted)) {
+          trace("interrupted")
+          false
+        } else {
+          true
+        }
+      })
+    }
+
     private inline def updateState(
       ifRunning: State.Running => Boolean = { s =>
         throw new IllegalStateException(s"$self in ${s.name} state cannot be set to running!")
@@ -98,6 +131,9 @@ object Fiber {
       },
       ifCompleted: State.Completed => Boolean = { s =>
         throw new IllegalStateException(s"$self in ${s.name} state cannot be set to completed!")
+      },
+      ifInterrupted: State => Boolean = { s =>
+        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to interrupted!")
       }
     ): Unit = {
       var trying = true
@@ -109,6 +145,7 @@ object Fiber {
           case s: State.Running   => trying = ifRunning(s)
           case s: State.Failed    => trying = ifFailed(s)
           case s: State.Completed => trying = ifCompleted(s)
+          case s                  => trying = ifInterrupted(s)
         }
       }
     }
@@ -143,51 +180,77 @@ object Fiber {
     private def loop(): Unit =
       while (looping) {
         try {
-          instruction match {
-            case Effect.Value(value) =>
-              nextContinuationInLoop(value)
+          if (interrupted.get && isInterruptible.get && !isInterrupting.get) {
+            isInterrupting.set(true)
+            continuations.push(_ => instruction)
+            instruction = Effect.Interrupted
+          } else {
+            instruction match {
+              case Effect.Value(value) =>
+                nextContinuationInLoop(value)
 
-            case Effect.Suspend(getValue) =>
-              nextContinuationInLoop(getValue())
+              case Effect.Suspend(getValue) =>
+                nextContinuationInLoop(getValue())
 
-            case Effect.Error(error) =>
-              handleErrorOrFailLoop(error)
+              case Effect.Error(error) =>
+                handleErrorOrFailLoop(error)
 
-            case Effect.FlatMap(effect, continuation) =>
-              continuations.push(continuation.asInstanceOf[Any => Effect[Any]])
-              instruction = effect
+              case Effect.Interrupted =>
+                handleInterrupted()
 
-            case Effect.Callback(register) =>
-              looping = false
-              trace("pause looping")
-              register {
-                case Result.UnexpectedError(throwable) =>
-                  handleErrorOrFailLoop(Left(throwable))
+              case Effect.FlatMap(effect, continuation) =>
+                continuations.push(continuation.asInstanceOf[Any => Effect[Any]])
+                instruction = effect
 
-                case Result.Error(e) =>
-                  handleErrorOrFailLoop(Right(e))
+              case Effect.Callback(register) =>
+                looping = false
+                trace("pause looping")
+                register {
+                  case Result.UnexpectedError(throwable) =>
+                    handleErrorOrFailLoop(Left(throwable))
 
-                case Result.Value(value) =>
-                  if (continuations.isEmpty) {
-                    completeFiber(value.asInstanceOf[A])
-                  } else {
-                    instruction = Effect.Value(value)
-                    looping = true
-                    trace("resume looping")
-                  }
-              }
+                  case Result.Interrupted =>
+                    handleInterrupted()
 
-            case Effect.Fork(effect) =>
-              nextContinuationInLoop(Fiber(effect, executor))
+                  case Result.Error(e) =>
+                    handleErrorOrFailLoop(Right(e))
 
-            case fold @ Effect.Fold(effect, _, _) =>
-              continuations.push(fold.asInstanceOf[Any => Effect[Any]])
-              instruction = effect
+                  case Result.Value(value) =>
+                    if (continuations.isEmpty) {
+                      completeFiber(value.asInstanceOf[A])
+                    } else {
+                      instruction = Effect.Value(value)
+                      looping = true
+                      trace("resume looping")
+                    }
+                }
 
-            case Effect.On(newExecutor) =>
-              // TODO: Need to switch back to `executor` after `effect` is run.
-              executor = newExecutor
-              nextContinuationInLoop(())
+              case Effect.Fork(effect) =>
+                trace("forking a new fiber")
+                nextContinuationInLoop(Fiber(effect, executor, Some(id)))
+
+              case fold @ Effect.Fold(effect, _, _) =>
+                continuations.push(fold.asInstanceOf[Any => Effect[Any]])
+                instruction = effect
+
+              case Effect.On(effect, newExecutor) =>
+                val oldExecutor = executor
+                trace(s"switching executor to $newExecutor")
+                executor = newExecutor
+                instruction = effect.finalize(Effect.Value {
+                  trace(s"switching executor back to $oldExecutor")
+                  executor = oldExecutor
+                })
+
+              case Effect.SetInterruptible(effect, interruptible) =>
+                val oldInterruptible = isInterruptible.get
+                trace(s"setting interruptible to $interruptible")
+                isInterruptible.set(interruptible)
+                instruction = effect.finalize(Effect.Value({
+                  trace(s"setting interruptible back to $oldInterruptible")
+                  isInterruptible.set(oldInterruptible)
+                }))
+            }
           }
         } catch {
           case NonFatal(throwable) =>

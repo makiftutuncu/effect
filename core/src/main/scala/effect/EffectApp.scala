@@ -23,7 +23,8 @@ trait EffectApp {
 object EffectApp {
   val SuccessExitCode         = 0
   val ErrorExitCode           = 1
-  val UnexpectedErrorExitCode = 2
+  val InterruptedExitCode     = 2
+  val UnexpectedErrorExitCode = 3
 
   def getExitCode(result: Result[Any]): Int =
     result match {
@@ -31,6 +32,10 @@ object EffectApp {
         Console.err.println("Unexpected error!")
         throwable.printStackTrace(Console.err)
         UnexpectedErrorExitCode
+
+      case Result.Interrupted =>
+        Console.err.println("Interrupted!")
+        InterruptedExitCode
 
       case Result.Error(e) =>
         Console.err.println(s"Failed: $e")
