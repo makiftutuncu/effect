@@ -18,7 +18,12 @@ inThisBuild(
   )
 )
 
-lazy val core = project in file("core")
+lazy val munitVersion = "0.7.29"
+
+lazy val munit = "org.scalameta" %% "munit" % munitVersion % Test
+
+lazy val core = (project in file("core"))
+  .settings(libraryDependencies ++= Seq(munit))
 
 lazy val examples = (project in file("examples"))
   .dependsOn(core)

@@ -25,12 +25,14 @@ final case class E(
   def withCauses(newCauses: List[E]): E         = copy(causes = newCauses)
   def withData(newData: Map[String, String]): E = copy(data = newData)
 
-  def addCause(firstCause: E, otherCauses: E*): E = copy(causes = causes ::: (firstCause :: otherCauses.toList))
-  def addData(pair: (String, String)): E          = copy(data = data + pair)
-  def addData(key: String, value: String): E      = addData(key -> value)
+  def addCauses(firstCause: E, otherCauses: E*): E = copy(causes = causes ++ (firstCause +: otherCauses.toList))
 
-  def toException(cause: Throwable): E.AsException = E.AsException(this, Some(cause))
-  def toException: E.AsException                   = E.AsException(this)
+  def addData[K, V](firstPair: (K, V), otherPairs: (K, V)*): E = {
+    val pairs = ((firstPair._1.toString -> firstPair._2.toString) +: otherPairs.map { case (k, v) => k.toString -> v.toString }).toMap
+    copy(data = data ++ pairs)
+  }
+
+  def toException: E.AsException = E.AsException(this)
 
   override def toString: String = {
     def escape(s: String): String = s.replace("\"", "\\\"")
@@ -53,17 +55,19 @@ final case class E(
 }
 
 object E {
-  final case class AsException(e: E, maybeCause: Option[Throwable] = None)
-      extends Exception(
-        e.toString,
-        maybeCause.orNull,
-        maybeCause.exists(c => Option(c.getSuppressed).exists(_.nonEmpty)),
-        maybeCause.isDefined
-      )
+  final case class AsException(e: E) extends Exception(e.toString, null, false, false)
 
   def fromThrowable(t: Throwable): E =
     t match {
-      case eae: E.AsException => eae.e
-      case _                  => Option(t.getCause).fold(E(t.getMessage))(c => E(t.getMessage).addCause(fromThrowable(c)))
+      case eae: E.AsException =>
+        eae.e
+
+      case _ =>
+        val cause            = Option(t.getCause).map(fromThrowable)
+        val suppressedCauses = Option(t.getSuppressed).map(_.map(fromThrowable))
+
+        E(t.getMessage).withCauses(cause.toList ++ suppressedCauses.fold(List.empty)(_.toList))
     }
+
+  val empty: E = E("")
 }
