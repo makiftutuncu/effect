@@ -4,5 +4,5 @@ import effect.{Effect, EffectApp}
 
 object Suspend extends EffectApp {
   override def mainEffect(args: Array[String]): Effect[Any] =
-    Effect.suspend(println("Hello world!"))
+    Effect(println("Hello world!"))
 }

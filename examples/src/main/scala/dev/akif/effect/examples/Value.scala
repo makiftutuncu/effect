@@ -4,5 +4,5 @@ import effect.{Effect, EffectApp}
 
 object Value extends EffectApp {
   override def mainEffect(args: Array[String]): Effect[Any] =
-    Effect.value(42)
+    Effect(42)
 }

@@ -15,14 +15,20 @@ sealed trait Fiber[+A] {
 object Fiber {
   private val fiberIds: AtomicLong = AtomicLong(0L)
 
-  private[effect] def apply[A](effect: Effect[A], executor: ExecutionContextExecutor, parentId: Option[Long]): Fiber[A] =
-    Context(fiberIds.getAndIncrement(), effect, executor, parentId)
+  private[effect] def apply[A](
+    effect: Effect[A],
+    executor: ExecutionContextExecutor,
+    parentId: Option[Long],
+    traceEnabled: Boolean
+  ): Fiber[A] =
+    Context(fiberIds.getAndIncrement(), effect, executor, parentId, traceEnabled)
 
   private final case class Context[A](
     id: Long,
     startingEffect: Effect[A],
     startingExecutor: ExecutionContextExecutor,
-    parentId: Option[Long]
+    parentId: Option[Long],
+    traceEnabled: Boolean
   ) extends Fiber[A] {
     self =>
     private var looping: Boolean                                 = true
@@ -78,7 +84,8 @@ object Fiber {
       case Interrupted                                extends State("interrupted")
     }
 
-    private inline def trace(message: String): Unit = println(s"[fiber ${parentId.fold(s"$id")(parent => s"$parent/$id")}] $message")
+    private inline def trace(message: String): Unit =
+      if (traceEnabled) println(s"[fiber ${parentId.fold(s"$id")(parent => s"$parent/$id")}] $message")
 
     private inline def nextContinuationInLoop(value: Any): Unit =
       if (continuations.isEmpty) {
@@ -124,16 +131,16 @@ object Fiber {
 
     private inline def updateState(
       ifRunning: State.Running => Boolean = { s =>
-        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to running!")
+        throw IllegalStateException(s"$self in ${s.name} state cannot be set to running!")
       },
       ifFailed: State.Failed => Boolean = { s =>
-        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to failed!")
+        throw IllegalStateException(s"$self in ${s.name} state cannot be set to failed!")
       },
       ifCompleted: State.Completed => Boolean = { s =>
-        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to completed!")
+        throw IllegalStateException(s"$self in ${s.name} state cannot be set to completed!")
       },
       ifInterrupted: State => Boolean = { s =>
-        throw new IllegalStateException(s"$self in ${s.name} state cannot be set to interrupted!")
+        throw IllegalStateException(s"$self in ${s.name} state cannot be set to interrupted!")
       }
     ): Unit = {
       var trying = true
@@ -227,7 +234,7 @@ object Fiber {
 
               case Effect.Fork(effect) =>
                 trace("forking a new fiber")
-                nextContinuationInLoop(Fiber(effect, executor, Some(id)))
+                nextContinuationInLoop(Fiber(effect, executor, Some(id), traceEnabled))
 
               case fold @ Effect.Fold(effect, _, _) =>
                 continuations.push(fold.asInstanceOf[Any => Effect[Any]])

@@ -113,7 +113,7 @@ sealed trait Effect[+A] { self =>
   final def uninterruptible: Effect[A] =
     Effect.SetInterruptible(self, false)
 
-  final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor): Result[A] = {
+  final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor, traceEnabled: Boolean = false): Result[A] = {
     val latch  = new CountDownLatch(1)
     var result = null.asInstanceOf[Result[A]]
     val effect = self
@@ -132,7 +132,7 @@ sealed trait Effect[+A] { self =>
         latch.countDown()
       }
 
-    Fiber(effect, executor, None)
+    Fiber(effect, executor, None, traceEnabled)
     latch.await()
     result
   }
@@ -143,13 +143,11 @@ object Effect {
 
   val unit: Effect[Unit] = Value(())
 
-  def value[A](a: => A): Effect[A] = Value(a)
+  def apply[A](a: => A): Effect[A] = Suspend(() => a)
 
-  def suspend[A](a: => A): Effect[A] = Suspend(() => a)
+  def error(e: E): Effect[Nothing] = Error(Right(e))
 
-  def error[A](e: E): Effect[A] = Error(Right(e))
-
-  private[effect] def unexpectedError[A](throwable: Throwable): Effect[A] = Error(Left(throwable))
+  def unexpectedError(throwable: Throwable): Effect[Nothing] = Error(Left(throwable))
 
   def callback[A](register: (Result[A] => Any) => Any): Effect[A] = Callback(register)
 
