@@ -55,7 +55,7 @@ final case class E(
 }
 
 object E {
-  final case class AsException(e: E) extends Exception(e.toString, null, false, false)
+  final case class AsException(e: E) extends Exception(e.toString, null, true, false)
 
   def fromThrowable(t: Throwable): E =
     t match {
@@ -68,6 +68,4 @@ object E {
 
         E(t.getMessage).withCauses(cause.toList ++ suppressedCauses.fold(List.empty)(_.toList))
     }
-
-  val empty: E = E("")
 }
