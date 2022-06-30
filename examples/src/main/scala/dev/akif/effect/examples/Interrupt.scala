@@ -9,9 +9,9 @@ object Interrupt extends EffectApp {
         Effect(println("Can't stop me")).repeat(100).uninterruptible and
           Effect(println("Hello")).forever
       )
-        .finalize(Effect(println("Finalizing")))
+        .ensuring(Effect(println("Finalizing")))
         .fork
-      _ <- Effect(Thread.sleep(10))
+      _ <- Effect(Thread.sleep(40))
       _ <- fiber.interrupt
       _ <- Effect(println("Bye"))
     } yield ()

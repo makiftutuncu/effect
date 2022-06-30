@@ -55,45 +55,38 @@ sealed trait Effect[+A] { self =>
   final def tuplePar[B](that: => Effect[B]): Effect[(A, B)] =
     zipPar(that)((a, b) => (a, b))
 
-  final def foldEffect[B](ifError: E => Effect[B], ifValue: A => Effect[B]): Effect[B] =
-    Effect.Fold(
-      self,
-      {
-        case Left(throwable) => Effect.Error(Left(throwable))
-        case Right(e)        => ifError(e)
-      },
-      ifValue
-    )
+  final def foldEffect[B](ifError: Either[Throwable, E] => Effect[B], ifValue: A => Effect[B]): Effect[B] =
+    Effect.Fold(self, ifError, ifValue)
 
-  final def fold[B](ifError: E => B, ifValue: A => B): Effect[B] =
+  final def fold[B](ifError: Either[Throwable, E] => B, ifValue: A => B): Effect[B] =
     foldEffect(e => Effect.Value(ifError(e)), a => Effect.Value(ifValue(a)))
 
-  final def recoverEffect[AA >: A](handler: Throwable => Effect[AA]): Effect[AA] =
-    Effect.Fold(
-      self,
-      {
-        case Left(throwable) => handler(throwable)
-        case Right(e)        => Effect.Error(Right(e))
-      },
-      value => Effect.Value(value)
-    )
+  final def handleAllErrorsEffect[AA >: A](handler: Either[Throwable, E] => Effect[AA]): Effect[AA] =
+    foldEffect(handler, a => Effect.Value(a))
 
-  final def recover[AA >: A](handler: Throwable => AA): Effect[AA] =
-    recoverEffect(throwable => Effect.Value(handler(throwable)))
+  final def handleAllErrors[AA >: A](handler: Either[Throwable, E] => AA): Effect[AA] =
+    handleAllErrorsEffect(e => Effect.Value(handler(e)))
+
+  final def handleUnexpectedErrorEffect[AA >: A](handler: Throwable => Effect[AA]): Effect[AA] =
+    handleAllErrorsEffect {
+      case Left(throwable) => handler(throwable)
+      case Right(e)        => Effect.Error(Right(e))
+    }
+
+  final def handleUnexpectedError[AA >: A](handler: Throwable => AA): Effect[AA] =
+    handleUnexpectedErrorEffect(throwable => Effect.Value(handler(throwable)))
 
   final def handleErrorEffect[AA >: A](handler: E => Effect[AA]): Effect[AA] =
-    foldEffect(handler, Effect.Value.apply)
+    handleAllErrorsEffect {
+      case Left(throwable) => Effect.Error(Left(throwable))
+      case Right(e)        => handler(e)
+    }
 
   final def handleError[AA >: A](handler: E => AA): Effect[AA] =
     handleErrorEffect(e => Effect.Value(handler(e)))
 
-  final def refineError(handler: Throwable => E): Effect[A] =
-    recoverEffect(throwable => Effect.Error(Right(handler(throwable))))
-
-  final def finalize(finalizer: => Effect[Any]): Effect[A] =
-    foldEffect(e => finalizer and Effect.Error(Right(e)), a => finalizer and Effect.Value(a)).recoverEffect(e =>
-      finalizer and Effect.Error(Left(e))
-    )
+  final def ensuring(finalizer: => Effect[Any]): Effect[A] =
+    foldEffect(e => finalizer and Effect.Error(e), a => finalizer and Effect.Value(a))
 
   final def on(executor: ExecutionContextExecutor): Effect[A] =
     Effect.On(self, executor)
@@ -116,21 +109,21 @@ sealed trait Effect[+A] { self =>
   final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor, traceEnabled: Boolean = false): Result[A] = {
     val latch  = new CountDownLatch(1)
     var result = null.asInstanceOf[Result[A]]
-    val effect = self
-      .fold(
-        error => {
-          result = Result.Error(error)
+    val effect = self.fold(
+      {
+        case Left(throwable) =>
+          result = Result.UnexpectedError(throwable)
           latch.countDown()
-        },
-        value => {
-          result = Result.Value(value)
+
+        case Right(e) =>
+          result = Result.Error(e)
           latch.countDown()
-        }
-      )
-      .recover { throwable =>
-        result = Result.UnexpectedError(throwable)
+      },
+      value => {
+        result = Result.Value(value)
         latch.countDown()
       }
+    )
 
     Fiber(effect, executor, None, traceEnabled)
     latch.await()
@@ -172,26 +165,26 @@ object Effect {
   }
 
   private[effect] final case class FlatMap[A, +B](effect: Effect[A], continuation: A => Effect[B]) extends Effect[B] {
-    override def toString: String = s"FlatMap($effect)"
+    override def toString: String = s"FlatMap"
   }
 
   private[effect] final case class Fork[+A](effect: Effect[A]) extends Effect[Fiber[A]] {
-    override def toString: String = s"Fork($effect)"
+    override def toString: String = s"Fork"
   }
 
   private[effect] final case class Fold[A, +B](effect: Effect[A], ifError: Either[Throwable, E] => Effect[B], ifValue: A => Effect[B])
       extends Effect[B]
       with (A => Effect[B]) {
-    override def toString: String = s"Fold($effect)"
+    override def toString: String = s"Fold"
 
     override def apply(a: A): Effect[B] = ifValue(a)
   }
 
   private[effect] final case class On[A](effect: Effect[A], executor: ExecutionContextExecutor) extends Effect[A] {
-    override def toString: String = s"On($effect, $executor)"
+    override def toString: String = s"On($executor)"
   }
 
   private[effect] final case class SetInterruptible[A](effect: Effect[A], isInterruptible: Boolean) extends Effect[A] {
-    override def toString: String = s"SetInterruptible($effect, $isInterruptible)"
+    override def toString: String = s"SetInterruptible($isInterruptible)"
   }
 }

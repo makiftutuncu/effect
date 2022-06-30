@@ -3,11 +3,13 @@ package effect
 trait EffectApp {
   import EffectApp.*
 
+  val traceEnabled: Boolean = true
+
   def mainEffect(args: Array[String]): Effect[Any]
 
   def main(args: Array[String]): Unit = {
     // TODO: Need to interrupt on shutdown hook
-    val result   = mainEffect(args).unsafeRun()
+    val result   = mainEffect(args).unsafeRun(traceEnabled = traceEnabled)
     val exitCode = getExitCode(result)
 
     try {

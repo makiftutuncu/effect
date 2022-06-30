@@ -1,12 +1,8 @@
 package effect
 
-import munit.FunSuite
-
 import java.time.Instant
 
-class ETest extends FunSuite {
-  val e: E = E("test")
-
+class ETest extends TestSuite {
   test("checking if E has code") {
     assertEquals(e.hasCode, false)
     assertEquals(e.withCode(1).hasCode, true)
@@ -124,10 +120,4 @@ class ETest extends FunSuite {
 
     assertEquals(actual, expected)
   }
-
-  extension (t: Throwable)
-    def withSuppressed(other: Throwable): Throwable = {
-      t.addSuppressed(other)
-      t
-    }
 }

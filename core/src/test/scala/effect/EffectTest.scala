@@ -1,17 +1,8 @@
 package effect
 
-import munit.FunSuite
-
 import java.util.concurrent.atomic.AtomicInteger
 
-class EffectTest extends FunSuite {
-  def time[A](a: => A): (A, Long) = {
-    val before = System.currentTimeMillis()
-    val result = a
-    val after  = System.currentTimeMillis()
-    result -> (after - before)
-  }
-
+class EffectTest extends TestSuite {
   test("creating an effect suspends execution") {
     val counter = AtomicInteger(0)
     val effect  = Effect(counter.incrementAndGet())
@@ -22,48 +13,43 @@ class EffectTest extends FunSuite {
   test("running an effect that succeeds yields computed value") {
     val counter = AtomicInteger(0)
     val effect  = Effect(counter.incrementAndGet())
-    val result  = effect.unsafeRun()
 
+    effect.assertValue(1)
     assertEquals(counter.get(), 1)
-    assertEquals(result, Result.Value(1))
   }
 
   test("running an effect that fails yields error") {
-    val effect = Effect.error(E("test"))
-    val result = effect.unsafeRun()
-
-    assertEquals(result, Result.Error(E("test")))
+    Effect.error(E("test")).assertError(E("test"))
   }
 
-  /*test("running an effect that gets interrupted yields nothing") {
+  test("running an effect that gets interrupted yields nothing") {
     val counter = AtomicInteger(0)
     val effect =
       for {
         fiber <- Effect {
           val value = counter.incrementAndGet()
-          Thread.sleep(10000000)
+          Thread.sleep(1000)
           value
         }.fork
-        _     <- fiber.interrupt
-        value <- fiber.join
-      } yield value
-    val (result, elapsed) = time(effect.unsafeRun(traceEnabled = true))
+        _ <- Effect(Thread.sleep(100))
+        _ <- fiber.interrupt
+      } yield ()
 
+    assertTakesMillisBetween(100L, 1000L) {
+      effect.unsafeRun()
+    }
     assertEquals(counter.get(), 1)
-    assertEquals(result, Result.Interrupted)
-    assertEquals(elapsed <= 100, true, s"Expected to take less than 100 ms but took $elapsed ms")
-  }*/
+  }
 
   test("running an effect that fails unexpectedly yields the unexpected error") {
     val counter   = AtomicInteger(0)
     val exception = Exception("test")
     val effect = Effect {
-      val value = counter.incrementAndGet()
+      counter.incrementAndGet()
       throw exception
     }
-    val result = effect.unsafeRun()
 
+    effect.assertUnexpectedError(exception)
     assertEquals(counter.get(), 1)
-    assertEquals(result, Result.UnexpectedError(exception))
   }
 }
