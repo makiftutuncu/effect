@@ -14,7 +14,7 @@ sealed trait Fiber[+A] {
 }
 
 object Fiber {
-  private val fiberIds: AtomicLong = AtomicLong(0L)
+  private val fiberIds: AtomicLong = AtomicLong(0)
 
   private[effect] def apply[A](
     effect: Effect[A],
@@ -32,18 +32,18 @@ object Fiber {
     traceEnabled: Boolean
   ) extends Fiber[A] {
     self =>
-    private var looping: Boolean                                 = true
     private var instruction: Effect[Any]                         = startingEffect
-    private var executor: ExecutionContextExecutor               = startingExecutor
     private val continuations: mutable.Stack[Any => Effect[Any]] = mutable.Stack.empty
 
-    private val state: AtomicReference[State]  = AtomicReference(State.Running(List.empty))
-    private val interrupted: AtomicBoolean     = AtomicBoolean(false)
-    private val isInterrupting: AtomicBoolean  = AtomicBoolean(false)
-    private val isInterruptible: AtomicBoolean = AtomicBoolean(true)
+    private val looping: AtomicBoolean                              = AtomicBoolean(true)
+    private val executor: AtomicReference[ExecutionContextExecutor] = AtomicReference(startingExecutor)
+    private val state: AtomicReference[State]                       = AtomicReference(State.Running(List.empty))
+    private val interrupted: AtomicBoolean                          = AtomicBoolean(false)
+    private val isInterrupting: AtomicBoolean                       = AtomicBoolean(false)
+    private val isInterruptible: AtomicBoolean                      = AtomicBoolean(true)
 
-    executor.execute { () =>
-      trace(s"created")
+    executor.get().execute { () =>
+      trace("created")
       setLooping(true)
       loop()
     }
@@ -84,15 +84,26 @@ object Fiber {
     }
 
     private def trace(message: String): Unit =
-      if (traceEnabled) println(s"[${Instant.now}] [F${parentId.fold(s"$id")(parent => s"$parent/$id")}] $message")
+      if (traceEnabled) println(s"[${Instant.now}] [F$id] $message")
 
     private def setLooping(looping: Boolean): Unit = {
       trace(s"setting looping to $looping")
-      self.looping = looping
+      self.looping.set(looping)
+    }
+
+    private def switchToExecutor(executor: ExecutionContextExecutor): Unit = {
+      trace(s"switching executor to $executor")
+      setLooping(false)
+      self.executor.set(executor)
+      executor.execute(() => {
+        setLooping(true)
+        loop()
+      })
     }
 
     private def nextContinuationInLoop(value: Any): Unit =
       if (continuations.isEmpty) {
+        trace("no more continuations")
         setLooping(false)
         completeFiber(value.asInstanceOf[A])
       } else {
@@ -158,12 +169,14 @@ object Fiber {
     private def completeFiber(value: A): Unit = {
       trace(s"completing fiber with value $value")
       updateState(ifRunning = { runningState =>
-        if (state.compareAndSet(runningState, State.Completed(value))) {
-          runningState.callbacks.foreach { callback => callback(Result.Value(value)) }
-          false
-        } else {
-          true
+        val completed = state.compareAndSet(runningState, State.Completed(value))
+        if (completed) {
+          runningState.callbacks.foreach { callback =>
+            trace(s"calling callback $callback with value $value")
+            callback(Result.Value(value))
+          }
         }
+        !completed
       })
     }
 
@@ -184,7 +197,8 @@ object Fiber {
     }
 
     private def loop(): Unit =
-      while (looping) {
+      while (looping.get()) {
+        trace(s"instruction is $instruction")
         try {
           if (interrupted.get && isInterruptible.get && !isInterrupting.get) {
             trace("starting to interrupt")
@@ -243,12 +257,13 @@ object Fiber {
                     } else {
                       instruction = Effect.Value(value)
                       setLooping(true)
+                      loop()
                     }
                 }
 
               case Effect.Fork(effect) =>
                 trace("processing fork")
-                nextContinuationInLoop(Fiber(effect, executor, Some(id), traceEnabled))
+                nextContinuationInLoop(Fiber(effect, executor.get(), Some(id), traceEnabled))
 
               case fold @ Effect.Fold(effect, _, _) =>
                 trace("processing fold")
@@ -257,22 +272,20 @@ object Fiber {
 
               case Effect.On(effect, newExecutor) =>
                 trace("processing on")
-                val oldExecutor = executor
-                trace(s"switching executor to $newExecutor")
-                executor = newExecutor
+                val oldExecutor = executor.get()
+                switchToExecutor(newExecutor)
                 instruction = effect.ensuring(Effect {
-                  trace(s"switching executor back to $oldExecutor")
-                  executor = oldExecutor
+                  trace(s"switching back to $oldExecutor")
+                  switchToExecutor(oldExecutor)
                 })
 
-              case Effect.SetInterruptible(effect, interruptible) =>
-                trace(s"processing set interruptible")
-                val oldInterruptible = isInterruptible.get
-                trace(s"setting interruptible to $interruptible")
-                isInterruptible.set(interruptible)
+              case Effect.SetUninterruptible(effect) =>
+                trace(s"processing set uninterruptible")
+                trace("setting interruptible to false")
+                isInterruptible.set(false)
                 instruction = effect.ensuring(Effect {
-                  trace(s"setting interruptible back to $oldInterruptible")
-                  isInterruptible.set(oldInterruptible)
+                  trace("setting interruptible back to true")
+                  isInterruptible.set(true)
                 })
             }
           }

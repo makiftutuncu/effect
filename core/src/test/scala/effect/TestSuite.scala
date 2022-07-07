@@ -6,13 +6,13 @@ import munit.{FunSuite, Location}
 import scala.concurrent.Future
 
 trait TestSuite extends FunSuite {
-  protected val traceEnabled: Boolean = true
+  protected val traceEnabled: Boolean = false
 
   val e: E = E("test")
 
-  private inline def assertEffect[A](effect: Effect[A], expected: => Result[A])(using Location): Unit = {
+  def assertEffect[A](effect: Effect[A])(assertion: PartialFunction[Result[A], Unit])(using Location): Unit = {
     val result = effect.unsafeRun(traceEnabled = traceEnabled)
-    assertEquals(result, expected)
+    if (assertion.isDefinedAt(result)) assertion(result) else fail(s"Unmatched result: $result")
   }
 
   def time[A](a: => A): (A, Long) = {
@@ -26,9 +26,12 @@ trait TestSuite extends FunSuite {
     assert(min >= 0, s"Min $min must be positive")
     assert(min < max, s"Min $min must be less than max $max")
     val (result, elapsed) = time(action)
-    assertEquals(elapsed > min && elapsed < max, true, s"Expected to take between $min ms and $max ms but took $elapsed ms")
+    assertEquals(elapsed >= min && elapsed <= max, true, s"Expected to take between $min ms and $max ms but took $elapsed ms")
     result
   }
+
+  def assertEffectTakesMillisBetween[A](min: Long, max: Long)(effect: => Effect[A])(using Location): Result[A] =
+    assertTakesMillisBetween(min, max)(effect.unsafeRun(traceEnabled = traceEnabled))
 
   extension (t: Throwable)
     def withSuppressed(other: Throwable): Throwable = {
@@ -38,15 +41,21 @@ trait TestSuite extends FunSuite {
 
   extension [A](effect: Effect[A]) {
     def assertResult(expected: => Result[A])(using Location): Unit =
-      assertEffect(effect, expected)
+      assertEffect(effect)(result => assertEquals(result, expected))
 
     def assertValue(expected: => A)(using Location): Unit =
-      assertEffect(effect, Result.Value(expected))
+      assertEffect(effect) { case Result.Value(value) =>
+        assertEquals(value, expected)
+      }
 
     def assertError(expected: => E)(using Location): Unit =
-      assertEffect(effect, Result.Error(expected))
+      assertEffect(effect) { case Result.Error(e) =>
+        assertEquals(e, expected)
+      }
 
     def assertUnexpectedError(expected: => Throwable)(using Location): Unit =
-      assertEffect(effect, Result.UnexpectedError(expected))
+      assertEffect(effect) { case Result.UnexpectedError(throwable) =>
+        assertEquals(throwable, expected)
+      }
   }
 }

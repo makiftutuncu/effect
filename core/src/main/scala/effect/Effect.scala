@@ -20,6 +20,21 @@ sealed trait Effect[+A] { self =>
   final def fork: Effect[Fiber[A]] =
     Effect.Fork(self)
 
+  final def zipEffect[B, C](that: => Effect[B])(f: (A, B) => Effect[C]): Effect[C] =
+    for {
+      a <- self
+      b <- that
+      c <- f(a, b)
+    } yield c
+
+  final def zipParEffect[B, C](that: => Effect[B])(f: (A, B) => Effect[C]): Effect[C] =
+    for {
+      aFiber <- self.fork
+      b      <- that
+      a      <- aFiber.join
+      c      <- f(a, b)
+    } yield c
+
   final def zip[B, C](that: => Effect[B])(f: (A, B) => C): Effect[C] =
     for {
       a <- self
@@ -27,12 +42,6 @@ sealed trait Effect[+A] { self =>
     } yield {
       f(a, b)
     }
-
-  final def also[B](that: => Effect[B]): Effect[A] =
-    zip(that)((a, _) => a)
-
-  final def and[B](that: => Effect[B]): Effect[B] =
-    zip(that)((_, b) => b)
 
   final def zipPar[B, C](that: => Effect[B])(f: (A, B) => C): Effect[C] =
     for {
@@ -43,8 +52,18 @@ sealed trait Effect[+A] { self =>
       f(a, b)
     }
 
+  final def also[B](that: => Effect[B]): Effect[A] =
+    flatMap { a =>
+      that.foldEffect(_ => Effect(a), _ => Effect(a))
+    }
+
   final def alsoPar[B](that: => Effect[B]): Effect[A] =
-    zipPar(that)((a, _) => a)
+    flatMap { a =>
+      that.fork.as(a)
+    }
+
+  final def and[B](that: => Effect[B]): Effect[B] =
+    zip(that)((_, b) => b)
 
   final def andPar[B](that: => Effect[B]): Effect[B] =
     zipPar(that)((_, b) => b)
@@ -85,6 +104,18 @@ sealed trait Effect[+A] { self =>
   final def handleError[AA >: A](handler: E => AA): Effect[AA] =
     handleErrorEffect(e => Effect.Value(handler(e)))
 
+  final def mapError(mapper: E => E): Effect[A] =
+    handleAllErrorsEffect {
+      case Left(throwable) => Effect.unexpectedError(throwable)
+      case Right(e)        => Effect.error(mapper(e))
+    }
+
+  final def mapUnexpectedError(mapper: Throwable => Throwable): Effect[A] =
+    handleAllErrorsEffect {
+      case Left(throwable) => Effect.unexpectedError(mapper(throwable))
+      case Right(e)        => Effect.error(e)
+    }
+
   final def ensuring(finalizer: => Effect[Any]): Effect[A] =
     foldEffect(e => finalizer and Effect.Error(e), a => finalizer and Effect.Value(a))
 
@@ -100,11 +131,11 @@ sealed trait Effect[+A] { self =>
   final def forever: Effect[Nothing] =
     self and self.forever
 
-  final def interruptible: Effect[A] =
-    Effect.SetInterruptible(self, true)
+  final def delayed(millis: Long): Effect[A] =
+    Effect(Thread.sleep(millis)) and self
 
   final def uninterruptible: Effect[A] =
-    Effect.SetInterruptible(self, false)
+    Effect.SetUninterruptible(self)
 
   final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor, traceEnabled: Boolean = false): Result[A] = {
     val latch  = new CountDownLatch(1)
@@ -184,7 +215,7 @@ object Effect {
     override def toString: String = s"On($executor)"
   }
 
-  private[effect] final case class SetInterruptible[A](effect: Effect[A], isInterruptible: Boolean) extends Effect[A] {
-    override def toString: String = s"SetInterruptible($isInterruptible)"
+  private[effect] final case class SetUninterruptible[A](effect: Effect[A]) extends Effect[A] {
+    override def toString: String = s"SetUninterruptible"
   }
 }

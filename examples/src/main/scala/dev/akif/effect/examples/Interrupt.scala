@@ -11,7 +11,7 @@ object Interrupt extends EffectApp {
       )
         .ensuring(Effect(println("Finalizing")))
         .fork
-      _ <- Effect(Thread.sleep(40))
+      _ <- Effect.unit.delayed(40)
       _ <- fiber.interrupt
       _ <- Effect(println("Bye"))
     } yield ()

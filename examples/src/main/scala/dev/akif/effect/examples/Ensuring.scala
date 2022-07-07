@@ -10,12 +10,9 @@ object Ensuring extends EffectApp {
       _ <- Effect.unexpectedError(new Exception).ensuring(Effect(println("Bye 3"))).handleAllErrors(_ => ())
       _ <- (
         for {
-          _ <- Effect(println("Before"))
-          fiber <- Effect {
-            Thread.sleep(1000)
-            println("After")
-          }.fork
-          _ <- fiber.interrupt
+          _     <- Effect(println("Before"))
+          fiber <- (Effect.unit.delayed(1000) and Effect(println("After"))).fork
+          _     <- fiber.interrupt
         } yield ()
       ).ensuring(Effect(println("Bye 4")))
     } yield ()
