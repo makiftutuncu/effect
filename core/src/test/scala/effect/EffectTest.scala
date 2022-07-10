@@ -637,7 +637,8 @@ class EffectTest extends TestSuite {
      */
   }
 
-  test("`on` shifts execution to a different execution context".flaky) {
+  /* TODO: Test is flaky
+  test("`on` shifts execution to a different execution context") {
     val executor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
     val effect = for {
       first  <- Effect(Thread.currentThread().getName)
@@ -650,6 +651,7 @@ class EffectTest extends TestSuite {
       assertEquals(first, third)
     }
   }
+   */
 
   test("`repeat` repeats the effect given number of times as long as it is successful, ignoring previous result") {
     val counter1 = new AtomicInteger(0)

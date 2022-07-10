@@ -1,34 +1,22 @@
-lazy val scalafixOrganizeImportsVersion = "0.6.0"
-
-lazy val scalafixOrganizeImports = "com.github.liancheng" %% "organize-imports" % scalafixOrganizeImportsVersion
+import Dependencies._
+import Settings._
 
 // Reload SBT automatically after changes to this file
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
-inThisBuild(
-  Seq(
-    organization     := "dev.akif",
-    organizationName := "Mehmet Akif Tütüncü",
-    scalafixDependencies += scalafixOrganizeImports,
-    scalafixOnCompile := true,
-    scalaVersion      := "3.1.2",
-    semanticdbEnabled := true,
-    semanticdbVersion := scalafixSemanticdb.revision,
-    version           := "0.1.0"
-  )
-)
-
-lazy val munitVersion = "0.7.29"
-
-lazy val munit = "org.scalameta" %% "munit" % munitVersion % Test
+inThisBuild(commonSettings ++ releaseSettings)
 
 lazy val core = (project in file("core"))
+  .settings(name := "effect-core")
   .settings(libraryDependencies ++= Seq(munit))
+  .settings(artifactSettings(shouldPublish = true))
 
 lazy val examples = (project in file("examples"))
   .dependsOn(core)
   .settings(fork := true)
+  .settings(artifactSettings(shouldPublish = false))
 
 lazy val root = (project in file("."))
-  .settings(name := "effect")
   .aggregate(core, examples)
+  .settings(name := "effect")
+  .settings(artifactSettings(shouldPublish = false))
