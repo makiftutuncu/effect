@@ -73,10 +73,10 @@ class EffectTest extends TestSuite {
     Effect.error(e).map(_ => "hello").assertError(e)
   }
 
-  test("`as` replaces the value in effect when it is successful") {
-    Effect("hello").as("world").assertValue("world")
+  test("`mapDiscarding` replaces the value in effect when it is successful, discarding the success value") {
+    Effect("hello").mapDiscarding("world").assertValue("world")
 
-    Effect.error(e).as("hello").assertError(e)
+    Effect.error(e).mapDiscarding("hello").assertError(e)
   }
 
   test("`fork` runs the effect in a separate fiber") {

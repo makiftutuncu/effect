@@ -7,6 +7,21 @@ import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.control.NonFatal
 
+/** A description of a functional effect that has following characteristics when run:
+  *
+  * <ul>
+  *
+  * <li>can produce a value of type A</li>
+  *
+  * <li>can fail with an error [[effect.E]]</li>
+  *
+  * <li>can fail unexpectedly with a [[java.lang.Throwable]]</li>
+  *
+  * </ul>
+  *
+  * @tparam A
+  *   type of the value this effect can produce when successful
+  */
 sealed trait Effect[+A] { self =>
   final def flatMap[B](f: A => Effect[B]): Effect[B] =
     Effect.FlatMap(self, f)
@@ -14,8 +29,11 @@ sealed trait Effect[+A] { self =>
   final def map[B](f: A => B): Effect[B] =
     flatMap(a => Effect.Value(f(a)))
 
-  final def as[B](b: => B): Effect[B] =
+  final def mapDiscarding[B](b: => B): Effect[B] =
     map(_ => b)
+
+  final def unit: Effect[Unit] =
+    mapDiscarding(())
 
   final def fork: Effect[Fiber[A]] =
     Effect.Fork(self)
@@ -59,7 +77,7 @@ sealed trait Effect[+A] { self =>
 
   final def alsoPar[B](that: => Effect[B]): Effect[A] =
     flatMap { a =>
-      that.fork.as(a)
+      that.fork.mapDiscarding(a)
     }
 
   final def and[B](that: => Effect[B]): Effect[B] =

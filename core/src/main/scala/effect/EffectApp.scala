@@ -23,10 +23,10 @@ trait EffectApp {
 }
 
 object EffectApp {
-  val SuccessExitCode         = 0
-  val ErrorExitCode           = 1
-  val InterruptedExitCode     = 2
-  val UnexpectedErrorExitCode = 3
+  private val SuccessExitCode         = 0
+  private val ErrorExitCode           = 1
+  private val InterruptedExitCode     = 2
+  private val UnexpectedErrorExitCode = 3
 
   def getExitCode(result: Result[Any]): Int =
     result match {

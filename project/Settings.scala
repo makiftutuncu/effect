@@ -18,7 +18,7 @@ object Settings {
       organizationName     := "Mehmet Akif Tütüncü",
       scalafixDependencies += scalafixOrganizeImports,
       scalafixOnCompile := true,
-      scalaVersion      := "3.1.2",
+      scalaVersion      := "3.2.0",
       scmInfo           := Some(ScmInfo(url("https://github.com/makiftutuncu/effect"), "git@github.com:makiftutuncu/effect.git")),
       semanticdbEnabled := true,
       semanticdbVersion := scalafixSemanticdb.revision,
