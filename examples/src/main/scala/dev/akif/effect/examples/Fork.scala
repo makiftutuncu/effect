@@ -4,9 +4,7 @@ import effect.{E, Effect, EffectApp}
 
 object Fork extends EffectApp {
   val program1: Effect[String] = Effect("hello")
-
-  val program2: Effect[Int] =
-    Effect.error(E("error"))
+  val program2: Effect[Int]    = Effect.error(E("error"))
 
   override def mainEffect(args: Array[String]): Effect[Any] =
     for {

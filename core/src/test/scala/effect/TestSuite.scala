@@ -5,10 +5,8 @@ import munit.{FunSuite, Location}
 
 import scala.concurrent.Future
 
-trait TestSuite extends FunSuite {
+trait TestSuite extends FunSuite with TestData {
   protected val traceEnabled: Boolean = false
-
-  val e: E = E("test")
 
   def assertEffect[A](effect: Effect[A])(assertion: PartialFunction[Result[A], Unit])(using Location): Unit = {
     val result = effect.unsafeRun(traceEnabled = traceEnabled)
@@ -56,6 +54,11 @@ trait TestSuite extends FunSuite {
     def assertUnexpectedError(expected: => Throwable)(using Location): Unit =
       assertEffect(effect) { case Result.UnexpectedError(throwable) =>
         assertEquals(throwable, expected)
+      }
+
+    def assertInterrupted(using Location): Unit =
+      assertEffect(effect) { case Result.Interrupted =>
+        assert(true)
       }
   }
 }

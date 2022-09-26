@@ -8,17 +8,17 @@ import scala.util.control.NoStackTrace
 /** An immutable, general purpose error model
   *
   * @param message
-  *   A message describing what went wrong, typically a human-readable message
+  *   a message describing what went wrong, typically a human-readable message
   * @param code
-  *   A numerical code for the error, optional
+  *   a numerical code for the error, optional
   * @param kind
-  *   A kind (type) for the error, typically a machine-readable string, optional
+  *   a kind (type) for the error, typically a machine-readable string, optional
   * @param timestamp
-  *   An timestamp of when the error occurred as a [[java.time.Instant]], optional
+  *   a timestamp of when the error occurred as a [[java.time.Instant]], optional
   * @param causes
-  *   A list of errors that caused this error to occur, if any
+  *   a list of errors that caused this error to occur, if any
   * @param data
-  *   Additional data in key-value format that's related to the error, typically additional values to help understanding why the error
+  *   additional data in key-value format that's related to the error, typically additional values to help understanding why the error
   *   occurred
   */
 final case class E(
@@ -48,37 +48,37 @@ final case class E(
   /** Gets a new E with given code set
     *
     * @param newCode
-    *   A new code to set
+    *   a new code to set
     *
     * @return
-    *   A new E with given code set
+    *   a new E with given code set
     */
   def withCode(newCode: Int): E = copy(code = Some(newCode))
 
   /** Gets a new E with given kind set
     *
     * @param newKind
-    *   A new kind to set
+    *   a new kind to set
     *
     * @return
-    *   A new E with given kind set
+    *   a new E with given kind set
     */
   def withKind(newKind: String): E = copy(kind = Some(newKind))
 
   /** Gets a new E with given timestamp set
     *
     * @param newTimestamp
-    *   A new timestamp to set
+    *   a new timestamp to set
     *
     * @return
-    *   A new E with given timestamp set
+    *   a new E with given timestamp set
     */
   def withTimestamp(newTimestamp: Instant): E = copy(timestamp = Some(newTimestamp))
 
   /** Gets a new E with timestamp set to current default time
     *
     * @return
-    *   A new E with timestamp set to current default time
+    *   a new E with timestamp set to current default time
     *
     * @see
     *   [[java.time.Instant.now]]
@@ -88,44 +88,44 @@ final case class E(
   /** Gets a new E with given list of causes set, this replaces any existing causes
     *
     * @param newCauses
-    *   A new list of causes to set
+    *   a new list of causes to set
     *
     * @return
-    *   A new E with given list of causes set
+    *   a new E with given list of causes set
     */
   def withCauses(newCauses: List[E]): E = copy(causes = newCauses)
 
   /** Gets a new E with given data set, this replaces any existing data
     *
     * @param newData
-    *   A new data to set
+    *   a new data to set
     *
     * @return
-    *   A new E with given data set
+    *   a new E with given data set
     */
   def withData(newData: Map[String, String]): E = copy(data = newData)
 
   /** Gets a new E with given causes added to existing causes
     *
     * @param firstCause
-    *   A new cause to add
+    *   a new cause to add
     * @param otherCauses
-    *   Zero or more causes to add
+    *   zero or more causes to add
     *
     * @return
-    *   A new E with given causes added to existing causes
+    *   a new E with given causes added to existing causes
     */
   def addCauses(firstCause: E, otherCauses: E*): E = copy(causes = causes ++ (firstCause +: otherCauses.toList))
 
   /** Gets a new E with given data added to existing data
     *
     * @param firstPair
-    *   A new key-value pair to add
+    *   a new key-value pair to add
     * @param otherPairs
-    *   Zero or more key-value pairs to add
+    *   zero or more key-value pairs to add
     *
     * @return
-    *   A new E with given data added to existing data
+    *   a new E with given data added to existing data
     */
   def addData[K, V](firstPair: (K, V), otherPairs: (K, V)*): E = {
     val (firstKey, firstValue) = firstPair
@@ -139,14 +139,14 @@ final case class E(
   /** Gets a [[java.lang.Exception]] representation of this error
     *
     * @return
-    *   A [[java.lang.Exception]] representation of this error
+    *   a [[java.lang.Exception]] representation of this error
     */
   def toException: E.AsException = E.AsException(this)
 
   /** Gets a json formatted string representation of this error
     *
     * @return
-    *   A json formatted string representation of this error
+    *   a json formatted string representation of this error
     */
   override def toString: String = {
     def escape(s: String): String = s.replace("\"", "\\\"")
@@ -183,7 +183,7 @@ object E {
     *   a [[java.lang.Throwable]] error
     *
     * @return
-    *   An E built from a [[java.lang.Throwable]]
+    *   an E built from a [[java.lang.Throwable]]
     */
   def fromThrowable(t: Throwable): E =
     t match {

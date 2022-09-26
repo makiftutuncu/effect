@@ -1,7 +1,6 @@
 package effect
 
-/** Result of a computation
-  */
+/** Result of a computation */
 enum Result[+A] {
 
   /** A successful computation producing a value of type A */

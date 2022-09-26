@@ -1,3 +1,4 @@
+/*
 package effect
 
 import effect.Result.Interrupted
@@ -10,62 +11,6 @@ import scala.concurrent.ExecutionContext
 class EffectTest extends TestSuite {
   val exception: Exception  = Exception("test")
   val exception2: Exception = Exception("test2")
-
-  test("creating an effect suspends execution") {
-    val counter = AtomicInteger(0)
-    val effect  = Effect(counter.incrementAndGet())
-
-    assertEquals(counter.get(), 0)
-  }
-
-  test("running an effect that succeeds yields computed value") {
-    val counter = AtomicInteger(0)
-    val effect  = Effect(counter.incrementAndGet())
-
-    effect.assertValue(1)
-    assertEquals(counter.get(), 1)
-  }
-
-  test("running an effect that fails yields error") {
-    Effect.error(E("test")).assertError(E("test"))
-  }
-
-  test("running an effect that gets interrupted yields nothing") {
-    val counter = AtomicInteger(0)
-    val effect =
-      for {
-        fiber <- Effect {
-          val value = counter.incrementAndGet()
-          Thread.sleep(1000)
-          value
-        }.fork
-        _ <- Effect.unit.delayed(100)
-        _ <- fiber.interrupt
-      } yield ()
-
-    assertEffectTakesMillisBetween(100, 1000)(effect)
-    assertEquals(counter.get(), 1)
-  }
-
-  test("running an effect that fails unexpectedly yields the unexpected error") {
-    val counter   = AtomicInteger(0)
-    val exception = Exception("test")
-    val effect = Effect {
-      counter.incrementAndGet()
-      throw exception
-    }
-
-    effect.assertUnexpectedError(exception)
-    assertEquals(counter.get(), 1)
-  }
-
-  test("`flatMap` sequences effects when they are successful") {
-    Effect("hello").flatMap(h => Effect(h + " world")).assertValue("hello world")
-
-    Effect("hello").flatMap(_ => Effect.error(e)).assertError(e)
-
-    Effect.error(e).flatMap(_ => Effect("hello")).assertError(e)
-  }
 
   test("`map` converts the value in effect when it is successful") {
     Effect("hello").map(_ + " world").assertValue("hello world")
@@ -92,106 +37,106 @@ class EffectTest extends TestSuite {
     assertEquals(result, Result.Value("hello world"))
   }
 
-  test("`zipEffect` runs both effects sequentially, when they are both successful, runs given effect with results") {
+  test("`combineEffect` runs both effects sequentially, when they are both successful, runs given effect with results") {
     val effect1 =
-      Effect("hello").delayed(100).zipEffect(Effect("world").delayed(100)) { (h, w) =>
+      Effect("hello").delayed(100).combineEffect(Effect("world").delayed(100)) { (h, w) =>
         Effect(s"$h $w")
       }
 
     assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("hello world"))
 
     val effect2 =
-      Effect.error(e).zipEffect(Effect("world").delayed(100)) { (h, w) =>
+      Effect.error(e).combineEffect(Effect("world").delayed(100)) { (h, w) =>
         Effect(s"$h $w")
       }
 
     assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
 
     val effect3 =
-      Effect("hello").delayed(100).zipEffect(Effect.error(e)) { (h, w) =>
+      Effect("hello").delayed(100).combineEffect(Effect.error(e)) { (h, w) =>
         Effect(s"$h $w")
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Error(e))
 
     val effect4 =
-      Effect("hello").delayed(100).zipEffect(Effect("world").delayed(100)) { (_, _) =>
+      Effect("hello").delayed(100).combineEffect(Effect("world").delayed(100)) { (_, _) =>
         Effect.error(e)
       }
 
     assertEquals(assertEffectTakesMillisBetween(200, 250)(effect4), Result.Error(e))
   }
 
-  test("`zipParEffect` runs both effects in parallel, when they are both successful, runs given effect with results") {
+  test("`combineParEffect` runs both effects in parallel, when they are both successful, runs given effect with results") {
     val effect1 =
-      Effect("hello").delayed(100).zipParEffect(Effect("world").delayed(100)) { (h, w) =>
+      Effect("hello").delayed(100).combineParEffect(Effect("world").delayed(100)) { (h, w) =>
         Effect(s"$h $w")
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("hello world"))
 
     val effect2 =
-      Effect.error(e).zipParEffect(Effect("world").delayed(100)) { (h, w) =>
+      Effect.error(e).combineParEffect(Effect("world").delayed(100)) { (h, w) =>
         Effect(s"$h $w")
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect2), Result.Error(e))
 
     val effect3 =
-      Effect("hello").delayed(100).zipParEffect(Effect.error(e)) { (h, w) =>
+      Effect("hello").delayed(100).combineParEffect(Effect.error(e)) { (h, w) =>
         Effect(s"$h $w")
       }
 
     assertEquals(assertEffectTakesMillisBetween(0, 50)(effect3), Result.Error(e))
 
     val effect4 =
-      Effect("hello").delayed(100).zipParEffect(Effect("world").delayed(100)) { (_, _) =>
+      Effect("hello").delayed(100).combineParEffect(Effect("world").delayed(100)) { (_, _) =>
         Effect.error(e)
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect4), Result.Error(e))
   }
 
-  test("`zip` runs both effects sequentially, when they are both successful, computes a value with results") {
+  test("`combine` runs both effects sequentially, when they are both successful, computes a value with results") {
     val effect1 =
-      Effect("hello").delayed(100).zip(Effect("world").delayed(100)) { (h, w) =>
+      Effect("hello").delayed(100).combine(Effect("world").delayed(100)) { (h, w) =>
         s"$h $w"
       }
 
     assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("hello world"))
 
     val effect2 =
-      Effect.error(e).zip(Effect("world").delayed(100)) { (h, w) =>
+      Effect.error(e).combine(Effect("world").delayed(100)) { (h, w) =>
         s"$h $w"
       }
 
     assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
 
     val effect3 =
-      Effect("hello").delayed(100).zip(Effect.error(e)) { (h, w) =>
+      Effect("hello").delayed(100).combine(Effect.error(e)) { (h, w) =>
         s"$h $w"
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Error(e))
   }
 
-  test("`zipPar` runs both effects in parallel, when they are both successful, computes a value with results") {
+  test("`combinePar` runs both effects in parallel, when they are both successful, computes a value with results") {
     val effect1 =
-      Effect("hello").delayed(100).zipPar(Effect("world").delayed(100)) { (h, w) =>
+      Effect("hello").delayed(100).combinePar(Effect("world").delayed(100)) { (h, w) =>
         s"$h $w"
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("hello world"))
 
     val effect2 =
-      Effect.error(e).zipPar(Effect("world").delayed(100)) { (h, w) =>
+      Effect.error(e).combinePar(Effect("world").delayed(100)) { (h, w) =>
         s"$h $w"
       }
 
     assertEquals(assertEffectTakesMillisBetween(100, 150)(effect2), Result.Error(e))
 
     val effect3 =
-      Effect("hello").delayed(100).zipPar(Effect.error(e)) { (h, w) =>
+      Effect("hello").delayed(100).combinePar(Effect.error(e)) { (h, w) =>
         s"$h $w"
       }
 
@@ -625,7 +570,7 @@ class EffectTest extends TestSuite {
     Effect.unexpectedError(exception).ensuring(Effect(counter3.incrementAndGet())).assertUnexpectedError(exception)
     assertEquals(counter3.get(), 1)
 
-    /* TODO: `ensuring` doesn't work properly with interruptions
+    // TODO: `ensuring` doesn't work properly with interruptions
     val counter4 = new AtomicInteger(0)
     val effect = for {
       fiber <- Effect.unit.delayed(1000).ensuring(Effect(counter4.incrementAndGet())).fork
@@ -634,10 +579,9 @@ class EffectTest extends TestSuite {
     } yield ()
     assertEffectTakesMillisBetween(100, 150)(effect)
     assertEquals(counter4.get(), 1)
-     */
   }
 
-  /* TODO: Test is flaky
+  // TODO: Test is flaky
   test("`on` shifts execution to a different execution context") {
     val executor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
     val effect = for {
@@ -651,7 +595,6 @@ class EffectTest extends TestSuite {
       assertEquals(first, third)
     }
   }
-   */
 
   test("`repeat` repeats the effect given number of times as long as it is successful, ignoring previous result") {
     val counter1 = new AtomicInteger(0)
@@ -718,7 +661,7 @@ class EffectTest extends TestSuite {
     assertEquals(counter2.get(), 6)
   }
 
-  /* TODO: Fix this
+  // TODO: Fix this
   test("`uninterruptible` makes an effect uninterruptible so even if it gets interrupt call, it finishes its work first") {
     val counter = new AtomicInteger(0)
 
@@ -732,5 +675,5 @@ class EffectTest extends TestSuite {
 
     assertEquals(counter.get(), 10)
   }
-   */
 }
+ */
