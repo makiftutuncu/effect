@@ -84,6 +84,21 @@ sealed trait Effect[+A] { self =>
   final def fork: Effect[Fiber[A]] =
     Effect.Fork(self)
 
+  /** Describes combining success values of this effect and given effect sequentially, using another effect
+    *
+    * @param that
+    *   another effect to combine
+    * @param f
+    *   combination function
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    * @tparam C
+    *   type of the value combining effect can produce when successful
+    *
+    * @return
+    *   an effect describing combining success values of this effect and given effect sequentially, using another effect
+    */
   final def combineEffect[B, C](that: => Effect[B])(f: (A, B) => Effect[C]): Effect[C] =
     for {
       a <- self
@@ -91,6 +106,26 @@ sealed trait Effect[+A] { self =>
       c <- f(a, b)
     } yield c
 
+  /** Describes combining success values of this effect and given effect in parallel, using another effect
+    *
+    * <p>Parallelization here is achieved by forking effects.</p>
+    *
+    * @param that
+    *   another effect to combine
+    * @param f
+    *   combination function
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    * @tparam C
+    *   type of the value combining effect can produce when successful
+    *
+    * @return
+    *   an effect describing combining success values of this effect and given effect in parallel, using another effect
+    *
+    * @see
+    *   [[effect.Effect.fork]]
+    */
   final def combineParEffect[B, C](that: => Effect[B])(f: (A, B) => Effect[C]): Effect[C] =
     for {
       aFiber <- self.fork
@@ -99,6 +134,21 @@ sealed trait Effect[+A] { self =>
       c      <- f(a, b)
     } yield c
 
+  /** Describes combining success values of this effect and given effect sequentially
+    *
+    * @param that
+    *   another effect to combine
+    * @param f
+    *   combination function
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    * @tparam C
+    *   type of the value combining effect can produce when successful
+    *
+    * @return
+    *   an effect describing combining success values of this effect and given effect sequentially
+    */
   final def combine[B, C](that: => Effect[B])(f: (A, B) => C): Effect[C] =
     for {
       a <- self
@@ -107,6 +157,26 @@ sealed trait Effect[+A] { self =>
       f(a, b)
     }
 
+  /** Describes combining success values of this effect and given effect in parallel
+    *
+    * <p>Parallelization here is achieved by forking effects.</p>
+    *
+    * @param that
+    *   another effect to combine
+    * @param f
+    *   combination function
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    * @tparam C
+    *   type of the value combining effect can produce when successful
+    *
+    * @return
+    *   an effect describing combining success values of this effect and given effect in parallel
+    *
+    * @see
+    *   [[effect.Effect.fork]]
+    */
   final def combinePar[B, C](that: => Effect[B])(f: (A, B) => C): Effect[C] =
     for {
       aFiber <- self.fork
@@ -116,25 +186,107 @@ sealed trait Effect[+A] { self =>
       f(a, b)
     }
 
+  /** Describes running this effect and also running given effect sequentially regardless of the result of this one, ignoring the result of
+    * the given effect
+    *
+    * @param that
+    *   another effect to run
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    *
+    * @return
+    *   an effect describing running this effect and also running given effect sequentially regardless of the result of this one
+    */
   final def also[B](that: => Effect[B]): Effect[A] =
     flatMap { a =>
       that.foldEffect(_ => Effect(a))
     }
 
+  /** Describes running this effect and also running given effect in parallel regardless of the result of this one, ignoring the result of
+    * the given effect
+    *
+    * <p>Parallelization here is achieved by forking effects.</p>
+    *
+    * @param that
+    *   another effect to run
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    *
+    * @return
+    *   an effect describing running this effect and also running given effect in parallel regardless of the result of this one
+    * @see
+    *   [[effect.Effect.fork]]
+    */
   final def alsoPar[B](that: => Effect[B]): Effect[A] =
     flatMap { a =>
       that.fork.mapDiscarding(a)
     }
 
+  /** Describes running this effect and running given effect sequentially, ignoring the result of this effect
+    *
+    * @param that
+    *   another effect to run
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    *
+    * @return
+    *   an effect describing running this effect and running given effect sequentially
+    */
   final def and[B](that: => Effect[B]): Effect[B] =
     combine(that)((_, b) => b)
 
+  /** Describes running this effect and running given effect in parallel, ignoring the result of this effect
+    *
+    * <p>Parallelization here is achieved by forking effects.</p>
+    *
+    * @param that
+    *   another effect to run
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    *
+    * @return
+    *   an effect describing running this effect and running given effect in parallel
+    *
+    * @see
+    *   [[effect.Effect.fork]]
+    */
   final def andPar[B](that: => Effect[B]): Effect[B] =
     combinePar(that)((_, b) => b)
 
+  /** Describes combining success values of this effect and given effect sequentially into a tuple
+    *
+    * @param that
+    *   another effect to combine
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    *
+    * @return
+    *   an effect describing combining success values of this effect and given effect sequentially into a tuple
+    */
   final def tuple[B](that: => Effect[B]): Effect[(A, B)] =
     combine(that)((a, b) => (a, b))
 
+  /** Describes combining success values of this effect and given effect in parallel into a tuple
+    *
+    * <p>Parallelization here is achieved by forking effects.</p>
+    *
+    * @param that
+    *   another effect to combine
+    *
+    * @tparam B
+    *   type of the value given effect can produce when successful
+    *
+    * @return
+    *   an effect describing combining success values of this effect and given effect in parallel into a tuple
+    *
+    * @see
+    *   [[effect.Effect.fork]]
+    */
   final def tuplePar[B](that: => Effect[B]): Effect[(A, B)] =
     combinePar(that)((a, b) => (a, b))
 

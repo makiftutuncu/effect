@@ -9,226 +9,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.ExecutionContext
 
 class EffectTest extends TestSuite {
-  val exception: Exception  = Exception("test")
-  val exception2: Exception = Exception("test2")
-
-  test("`map` converts the value in effect when it is successful") {
-    Effect("hello").map(_ + " world").assertValue("hello world")
-
-    Effect.error(e).map(_ => "hello").assertError(e)
-  }
-
-  test("`mapDiscarding` replaces the value in effect when it is successful, discarding the success value") {
-    Effect("hello").mapDiscarding("world").assertValue("world")
-
-    Effect.error(e).mapDiscarding("hello").assertError(e)
-  }
-
-  test("`fork` runs the effect in a separate fiber") {
-    val effect = for {
-      fiber1 <- Effect("hello").delayed(100).fork
-      fiber2 <- Effect("world").delayed(100).fork
-      hello  <- fiber1.join
-      world  <- fiber2.join
-    } yield s"$hello $world"
-
-    val result = assertEffectTakesMillisBetween(100, 150)(effect)
-
-    assertEquals(result, Result.Value("hello world"))
-  }
-
-  test("`combineEffect` runs both effects sequentially, when they are both successful, runs given effect with results") {
-    val effect1 =
-      Effect("hello").delayed(100).combineEffect(Effect("world").delayed(100)) { (h, w) =>
-        Effect(s"$h $w")
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("hello world"))
-
-    val effect2 =
-      Effect.error(e).combineEffect(Effect("world").delayed(100)) { (h, w) =>
-        Effect(s"$h $w")
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
-
-    val effect3 =
-      Effect("hello").delayed(100).combineEffect(Effect.error(e)) { (h, w) =>
-        Effect(s"$h $w")
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Error(e))
-
-    val effect4 =
-      Effect("hello").delayed(100).combineEffect(Effect("world").delayed(100)) { (_, _) =>
-        Effect.error(e)
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(200, 250)(effect4), Result.Error(e))
-  }
-
-  test("`combineParEffect` runs both effects in parallel, when they are both successful, runs given effect with results") {
-    val effect1 =
-      Effect("hello").delayed(100).combineParEffect(Effect("world").delayed(100)) { (h, w) =>
-        Effect(s"$h $w")
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("hello world"))
-
-    val effect2 =
-      Effect.error(e).combineParEffect(Effect("world").delayed(100)) { (h, w) =>
-        Effect(s"$h $w")
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect2), Result.Error(e))
-
-    val effect3 =
-      Effect("hello").delayed(100).combineParEffect(Effect.error(e)) { (h, w) =>
-        Effect(s"$h $w")
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect3), Result.Error(e))
-
-    val effect4 =
-      Effect("hello").delayed(100).combineParEffect(Effect("world").delayed(100)) { (_, _) =>
-        Effect.error(e)
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect4), Result.Error(e))
-  }
-
-  test("`combine` runs both effects sequentially, when they are both successful, computes a value with results") {
-    val effect1 =
-      Effect("hello").delayed(100).combine(Effect("world").delayed(100)) { (h, w) =>
-        s"$h $w"
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("hello world"))
-
-    val effect2 =
-      Effect.error(e).combine(Effect("world").delayed(100)) { (h, w) =>
-        s"$h $w"
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
-
-    val effect3 =
-      Effect("hello").delayed(100).combine(Effect.error(e)) { (h, w) =>
-        s"$h $w"
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Error(e))
-  }
-
-  test("`combinePar` runs both effects in parallel, when they are both successful, computes a value with results") {
-    val effect1 =
-      Effect("hello").delayed(100).combinePar(Effect("world").delayed(100)) { (h, w) =>
-        s"$h $w"
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("hello world"))
-
-    val effect2 =
-      Effect.error(e).combinePar(Effect("world").delayed(100)) { (h, w) =>
-        s"$h $w"
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect2), Result.Error(e))
-
-    val effect3 =
-      Effect("hello").delayed(100).combinePar(Effect.error(e)) { (h, w) =>
-        s"$h $w"
-      }
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect3), Result.Error(e))
-  }
-
-  test("`also` runs both effects sequentially and uses result of first effect, ignoring the result of second effect") {
-    val effect1 = Effect("hello").delayed(100) also Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("hello"))
-
-    val effect2 = Effect.error(e) also Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
-
-    val effect3 = Effect("hello").delayed(100) also Effect.error(e)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Value("hello"))
-  }
-
-  test("`alsoPar` runs both effects in parallel and uses result of first effect, ignoring the result of second effect") {
-    val effect1 = Effect("hello").delayed(100) alsoPar Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("hello"))
-
-    val effect2 = Effect.error(e) alsoPar Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
-
-    val effect3 = Effect("hello").delayed(100) alsoPar Effect.error(e)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Value("hello"))
-  }
-
-  test("`and` runs both effects sequentially, when they are both successful, uses the result of second effect") {
-    val effect1 = Effect("hello").delayed(100) and Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("world"))
-
-    val effect2 = Effect.error(e) and Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
-
-    val effect3 = Effect("hello").delayed(100) and Effect.error(e)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Error(e))
-  }
-
-  test("`andPar` runs both effects in parallel, when they are both successful, uses the result of second effect") {
-    val effect1 = Effect("hello").delayed(100) andPar Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("world"))
-
-    val effect2 = Effect.error(e) andPar Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect2), Result.Error(e))
-
-    val effect3 = Effect("hello").delayed(100) andPar Effect.error(e)
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect3), Result.Error(e))
-  }
-
-  test("`tuple` runs both effects sequentially, when they are both successful, computes a value with results") {
-    val effect1 = Effect("hello").delayed(100) tuple Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(200, 250)(effect1), Result.Value("hello" -> "world"))
-
-    val effect2 = Effect.error(e) tuple Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect2), Result.Error(e))
-
-    val effect3 = Effect("hello").delayed(100) tuple Effect.error(e)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect3), Result.Error(e))
-  }
-
-  test("`tuplePar` runs both effects in parallel, when they are both successful, computes a value with results") {
-    val effect1 = Effect("hello").delayed(100) tuplePar Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect1), Result.Value("hello" -> "world"))
-
-    val effect2 = Effect.error(e) tuplePar Effect("world").delayed(100)
-
-    assertEquals(assertEffectTakesMillisBetween(100, 150)(effect2), Result.Error(e))
-
-    val effect3 = Effect("hello").delayed(100) tuplePar Effect.error(e)
-
-    assertEquals(assertEffectTakesMillisBetween(0, 50)(effect3), Result.Error(e))
-  }
-
   test("`foldEffect` handles all cases of an effect to run given effect(s)") {
-    Effect("hello")
+    helloEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
@@ -238,17 +20,17 @@ class EffectTest extends TestSuite {
       )
       .assertValue("value: hello")
 
-    Effect("hello")
+    helloEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
           case Right(error)    => Effect(s"error: $error")
         },
-        value => Effect.error(e)
+        value => errorEffect
       )
       .assertError(e)
 
-    Effect("hello")
+    helloEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
@@ -258,8 +40,7 @@ class EffectTest extends TestSuite {
       )
       .assertUnexpectedError(exception)
 
-    Effect
-      .error(e)
+    errorEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
@@ -269,8 +50,7 @@ class EffectTest extends TestSuite {
       )
       .assertValue(s"error: $e")
 
-    Effect
-      .error(e)
+    errorEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
@@ -280,8 +60,7 @@ class EffectTest extends TestSuite {
       )
       .assertError(e.withCode(1))
 
-    Effect
-      .error(e)
+    errorEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
@@ -291,8 +70,7 @@ class EffectTest extends TestSuite {
       )
       .assertUnexpectedError(exception)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .foldEffect(
         {
           case Left(throwable) => Effect(s"throwable: $throwable")
@@ -302,19 +80,17 @@ class EffectTest extends TestSuite {
       )
       .assertValue(s"throwable: $exception")
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .foldEffect(
         {
-          case Left(throwable) => Effect.error(e)
+          case Left(throwable) => errorEffect
           case Right(error)    => Effect(s"error: $error")
         },
         value => Effect(s"value: $value")
       )
       .assertError(e)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .foldEffect(
         {
           case Left(throwable) => Effect.unexpectedError(exception2)
@@ -326,7 +102,7 @@ class EffectTest extends TestSuite {
   }
 
   test("`fold` handles all cases of an effect to compute a value") {
-    Effect("hello")
+    helloEffect
       .fold(
         {
           case Left(throwable) => s"throwable: $throwable"
@@ -336,8 +112,7 @@ class EffectTest extends TestSuite {
       )
       .assertValue("value: hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .fold(
         {
           case Left(throwable) => s"throwable: $throwable"
@@ -347,8 +122,7 @@ class EffectTest extends TestSuite {
       )
       .assertValue(s"error: $e")
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .fold(
         {
           case Left(throwable) => s"throwable: $throwable"
@@ -360,55 +134,49 @@ class EffectTest extends TestSuite {
   }
 
   test("`handleAllErrorsEffect` handles error and unexpected error cases of an effect to run given effect") {
-    Effect("hello")
+    helloEffect
       .handleAllErrorsEffect {
         case Left(throwable) => Effect(s"throwable: $throwable")
         case Right(error)    => Effect(s"error: $error")
       }
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleAllErrorsEffect {
         case Left(throwable) => Effect(s"throwable: $throwable")
         case Right(error)    => Effect(s"error: $error")
       }
       .assertValue(s"error: $e")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleAllErrorsEffect {
         case Left(throwable) => Effect(s"throwable: $throwable")
         case Right(error)    => Effect.error(e.withCode(1))
       }
       .assertError(e.withCode(1))
 
-    Effect
-      .error(e)
+    errorEffect
       .handleAllErrorsEffect {
         case Left(throwable) => Effect(s"throwable: $throwable")
         case Right(error)    => Effect.unexpectedError(exception)
       }
       .assertUnexpectedError(exception)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleAllErrorsEffect {
         case Left(throwable) => Effect(s"throwable: $throwable")
         case Right(error)    => Effect(s"error: $error")
       }
       .assertValue(s"throwable: $exception")
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleAllErrorsEffect {
-        case Left(throwable) => Effect.error(e)
+        case Left(throwable) => errorEffect
         case Right(error)    => Effect(s"error: $error")
       }
       .assertError(e)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleAllErrorsEffect {
         case Left(throwable) => Effect.unexpectedError(exception2)
         case Right(error)    => Effect(s"error: $error")
@@ -417,23 +185,21 @@ class EffectTest extends TestSuite {
   }
 
   test("`handleAllErrors` handles error and unexpected error cases of an effect to compute a value") {
-    Effect("hello")
+    helloEffect
       .handleAllErrors {
         case Left(throwable) => s"throwable: $throwable"
         case Right(error)    => s"error: $error"
       }
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleAllErrors {
         case Left(throwable) => s"throwable: $throwable"
         case Right(error)    => s"error: $error"
       }
       .assertValue(s"error: $e")
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleAllErrors {
         case Left(throwable) => s"throwable: $throwable"
         case Right(error)    => s"error: $error"
@@ -442,136 +208,120 @@ class EffectTest extends TestSuite {
   }
 
   test("`handleUnexpectedErrorEffect` handles unexpected error case of an effect to run given effect") {
-    Effect("hello")
+    helloEffect
       .handleUnexpectedErrorEffect { throwable => Effect(s"throwable: $throwable") }
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleUnexpectedErrorEffect { throwable => Effect(s"throwable: $throwable") }
       .assertError(e)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleUnexpectedErrorEffect { throwable => Effect(s"throwable: $throwable") }
       .assertValue(s"throwable: $exception")
 
-    Effect
-      .unexpectedError(exception)
-      .handleUnexpectedErrorEffect { throwable => Effect.error(e) }
+    unexpectedErrorEffect
+      .handleUnexpectedErrorEffect { throwable => errorEffect }
       .assertError(e)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleUnexpectedErrorEffect { throwable => Effect.unexpectedError(exception2) }
       .assertUnexpectedError(exception2)
   }
 
   test("`handleUnexpectedError` handles unexpected error case of an effect to compute a value") {
-    Effect("hello")
+    helloEffect
       .handleUnexpectedError { throwable => s"throwable: $throwable" }
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleUnexpectedError { throwable => s"throwable: $throwable" }
       .assertError(e)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleUnexpectedError { throwable => s"throwable: $throwable" }
       .assertValue(s"throwable: $exception")
   }
 
   test("`handleErrorEffect` handles error case of an effect to run given effect") {
-    Effect("hello")
+    helloEffect
       .handleErrorEffect { e => Effect(s"error: $e") }
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleErrorEffect { e => Effect(s"error: $e") }
       .assertValue(s"error: $e")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleErrorEffect { e => Effect.error(e.withCode(1)) }
       .assertError(e.withCode(1))
 
-    Effect
-      .error(e)
+    errorEffect
       .handleErrorEffect { e => Effect.unexpectedError(exception2) }
       .assertUnexpectedError(exception2)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleErrorEffect { e => Effect(s"error: $e") }
       .assertUnexpectedError(exception)
   }
 
   test("`handleError` handles error case of an effect to compute a value") {
-    Effect("hello")
+    helloEffect
       .handleError { e => s"error: $e" }
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .handleError { e => s"error: $e" }
       .assertValue(s"error: $e")
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .handleError { e => s"error: $e" }
       .assertUnexpectedError(exception)
   }
 
   test("`mapError` handles error case of an effect to modify the error") {
-    Effect("hello")
+    helloEffect
       .mapError(_.withCode(1))
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .mapError(_.withCode(1))
       .assertError(e.withCode(1))
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .mapError(_.withCode(1))
       .assertUnexpectedError(exception)
   }
 
   test("`mapUnexpectedError` handles unexpected error case of an effect to modify the unexpected error") {
-    Effect("hello")
+    helloEffect
       .mapUnexpectedError(_.withSuppressed(exception2))
       .assertValue("hello")
 
-    Effect
-      .error(e)
+    errorEffect
       .mapUnexpectedError(_.withSuppressed(exception2))
       .assertError(e)
 
-    Effect
-      .unexpectedError(exception)
+    unexpectedErrorEffect
       .mapUnexpectedError(_.withSuppressed(exception2))
       .assertUnexpectedError(exception.withSuppressed(exception2))
   }
 
   test("`ensuring` makes sure given effect is run when the effect is completed in any way") {
-    val counter1 = new AtomicInteger(0)
-    Effect("hello").ensuring(Effect(counter1.incrementAndGet())).assertValue("hello")
+    val counter1 = getCounter
+    helloEffect.ensuring(Effect(counter1.incrementAndGet())).assertValue("hello")
     assertEquals(counter1.get(), 1)
 
-    val counter2 = new AtomicInteger(0)
-    Effect.error(e).ensuring(Effect(counter2.incrementAndGet())).assertError(e)
+    val counter2 = getCounter
+    errorEffect.ensuring(Effect(counter2.incrementAndGet())).assertError(e)
     assertEquals(counter2.get(), 1)
 
-    val counter3 = new AtomicInteger(0)
+    val counter3 = getCounter
     Effect.unexpectedError(exception).ensuring(Effect(counter3.incrementAndGet())).assertUnexpectedError(exception)
     assertEquals(counter3.get(), 1)
 
     // TODO: `ensuring` doesn't work properly with interruptions
-    val counter4 = new AtomicInteger(0)
+    val counter4 = getCounter
     val effect = for {
       fiber <- Effect.unit.delayed(1000).ensuring(Effect(counter4.incrementAndGet())).fork
       _     <- Effect.unit.delayed(100)
@@ -597,7 +347,7 @@ class EffectTest extends TestSuite {
   }
 
   test("`repeat` repeats the effect given number of times as long as it is successful, ignoring previous result") {
-    val counter1 = new AtomicInteger(0)
+    val counter1 = getCounter
 
     val result1 = assertEffectTakesMillisBetween(300, 350) {
       Effect(counter1.incrementAndGet())
@@ -608,7 +358,7 @@ class EffectTest extends TestSuite {
     assertEquals(result1, Result.Value(()))
     assertEquals(counter1.get(), 3)
 
-    val counter2 = new AtomicInteger(0)
+    val counter2 = getCounter
 
     val result2 = assertEffectTakesMillisBetween(100, 150) {
       Effect {
@@ -628,7 +378,7 @@ class EffectTest extends TestSuite {
   }
 
   test("`forever` repeats the effect forever as long as it is successful, ignoring previous result") {
-    val counter1 = new AtomicInteger(0)
+    val counter1 = getCounter
 
     assertEffectTakesMillisBetween(100, 150) {
       for {
@@ -640,7 +390,7 @@ class EffectTest extends TestSuite {
 
     assert(counter1.get() <= 10, s"Counter value was: ${counter1.get()}")
 
-    val counter2 = new AtomicInteger(0)
+    val counter2 = getCounter
 
     assertEffectTakesMillisBetween(100, 150) {
       for {
@@ -663,7 +413,7 @@ class EffectTest extends TestSuite {
 
   // TODO: Fix this
   test("`uninterruptible` makes an effect uninterruptible so even if it gets interrupt call, it finishes its work first") {
-    val counter = new AtomicInteger(0)
+    val counter = getCounter
 
     assertEffectTakesMillisBetween(100, 150) {
       for {

@@ -31,6 +31,9 @@ trait TestSuite extends FunSuite with TestData {
   def assertEffectTakesMillisBetween[A](min: Long, max: Long)(effect: => Effect[A])(using Location): Result[A] =
     assertTakesMillisBetween(min, max)(effect.unsafeRun(traceEnabled = traceEnabled))
 
+  def assertEffectTakesAboutMillis[A](millis: Long, tolerance: Long = 50L)(effect: => Effect[A])(using Location): Result[A] =
+    assertEffectTakesMillisBetween(Math.max(0, millis - tolerance), millis + tolerance)(effect)
+
   extension (t: Throwable)
     def withSuppressed(other: Throwable): Throwable = {
       t.addSuppressed(other)
@@ -38,9 +41,6 @@ trait TestSuite extends FunSuite with TestData {
     }
 
   extension [A](effect: Effect[A]) {
-    def assertResult(expected: => Result[A])(using Location): Unit =
-      assertEffect(effect)(result => assertEquals(result, expected))
-
     def assertValue(expected: => A)(using Location): Unit =
       assertEffect(effect) { case Result.Value(value) =>
         assertEquals(value, expected)
@@ -60,5 +60,19 @@ trait TestSuite extends FunSuite with TestData {
       assertEffect(effect) { case Result.Interrupted =>
         assert(true)
       }
+  }
+
+  extension [A](result: Result[A]) {
+    def assertValue(expected: => A)(using Location): Unit =
+      assertEquals(result, Result.Value(expected))
+
+    def assertError(expected: => E)(using Location): Unit =
+      assertEquals(result, Result.Error(expected))
+
+    def assertUnexpectedError(expected: => Throwable)(using Location): Unit =
+      assertEquals(result, Result.UnexpectedError(expected))
+
+    def assertInterrupted(using Location): Unit =
+      assertEquals(result, Result.Interrupted)
   }
 }

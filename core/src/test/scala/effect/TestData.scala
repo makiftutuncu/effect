@@ -9,6 +9,8 @@ trait TestData {
 
   val helloEffect: Effect[String] = Effect("hello")
 
+  val worldEffect: Effect[String] = Effect("world")
+
   val errorEffect: Effect[Nothing] = Effect.error(e)
 
   val unexpectedErrorEffect: Effect[Nothing] = Effect.unexpectedError(exception)
@@ -21,4 +23,6 @@ trait TestData {
   }
 
   def getCounter: AtomicInteger = AtomicInteger(0)
+
+  val appendWorld: String => String = s => s"$s world"
 }
