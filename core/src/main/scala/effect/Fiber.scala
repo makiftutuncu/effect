@@ -68,15 +68,15 @@ object Fiber {
 
     override def join: Effect[A] = {
       trace("got join call")
-      Effect.callback { callback =>
+      Effect.callback { complete =>
         updateStateWhen {
           case State.Running(existingCallbacks) =>
             trace("adding a new callback to be notified when completed")
-            Some(State.Running(existingCallbacks :+ callback))
+            Some(State.Running(existingCallbacks :+ complete))
 
           case State.Completed(result) =>
             trace("joining")
-            callback(result)
+            complete(result)
             None
         }
       }
@@ -182,7 +182,7 @@ object Fiber {
       trace(s"completing fiber with result $result")
       setLooping(false)
       updateStateWhen { case State.Running(callbacks) =>
-        callbacks.foreach(callback => callback(result))
+        callbacks.foreach(complete => complete(result))
         Some(State.Completed(result))
       }
     }

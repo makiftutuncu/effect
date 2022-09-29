@@ -290,47 +290,152 @@ sealed trait Effect[+A] { self =>
   final def tuplePar[B](that: => Effect[B]): Effect[(A, B)] =
     combinePar(that)((a, b) => (a, b))
 
+  /** Describes folding over the result of this effect, handling all possible outcomes to build a new effect
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam B
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing folding over the result of this effect, handling all possible outcomes to build a new effect
+    */
   final def foldEffect[B](handler: Result[A] => Effect[B]): Effect[B] =
     Effect.Fold(self, handler)
 
+  /** Describes folding over the result of this effect, handling all possible outcomes to build an effect with a success value
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam B
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing folding over the result of this effect, handling all possible outcomes to build an effect with a success value
+    */
   final def fold[B](handler: Result[A] => B): Effect[B] =
     foldEffect(result => Effect(handler(result)))
 
+  /** Describes handling error and unexpected error of this effect to build a new effect
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam AA
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing handling error and unexpected error of this effect to build a new effect
+    */
   final def handleAllErrorsEffect[AA >: A](handler: Either[Throwable, E] => Effect[AA]): Effect[AA] =
     foldEffect {
-      case Result.Value(a)                   => Effect(a)
       case Result.Error(e)                   => handler(Right(e))
-      case Result.Interrupted                => Effect.callback(callback => callback(Result.Interrupted))
       case Result.UnexpectedError(throwable) => handler(Left(throwable))
+      case result                            => Effect.callback(complete => complete(result))
     }
 
+  /** Describes handling error and unexpected error of this effect to build an effect with a success value
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam AA
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing handling error and unexpected error of this effect to build an effect with a success value
+    */
   final def handleAllErrors[AA >: A](handler: Either[Throwable, E] => AA): Effect[AA] =
     handleAllErrorsEffect(e => Effect.Value(handler(e)))
 
+  /** Describes handling unexpected error of this effect to build a new effect
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam AA
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing handling unexpected error of this effect to build a new effect
+    */
   final def handleUnexpectedErrorEffect[AA >: A](handler: Throwable => Effect[AA]): Effect[AA] =
     handleAllErrorsEffect {
       case Left(throwable) => handler(throwable)
       case Right(e)        => Effect.Error(Right(e))
     }
 
+  /** Describes handling unexpected error of this effect to build an effect with a success value
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam AA
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing handling unexpected error of this effect to build an effect with a success value
+    */
   final def handleUnexpectedError[AA >: A](handler: Throwable => AA): Effect[AA] =
     handleUnexpectedErrorEffect(throwable => Effect.Value(handler(throwable)))
 
+  /** Describes handling error of this effect to build a new effect
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam AA
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing handling error of this effect to build a new effect
+    */
   final def handleErrorEffect[AA >: A](handler: E => Effect[AA]): Effect[AA] =
     handleAllErrorsEffect {
       case Left(throwable) => Effect.Error(Left(throwable))
       case Right(e)        => handler(e)
     }
 
+  /** Describes handling error of this effect to build an effect with a success value
+    *
+    * @param handler
+    *   handler function
+    *
+    * @tparam AA
+    *   type of the value resulting effect can produce when successful
+    *
+    * @return
+    *   an effect describing handling error of this effect to build an effect with a success value
+    */
   final def handleError[AA >: A](handler: E => AA): Effect[AA] =
     handleErrorEffect(e => Effect.Value(handler(e)))
 
+  /** Describes converting error of this effect into another error to build a new effect failing with converted error
+    *
+    * @param mapper
+    *   conversion function
+    *
+    * @return
+    *   an effect describing converting error of this effect into another error to build a new effect failing with converted error
+    */
   final def mapError(mapper: E => E): Effect[A] =
     handleAllErrorsEffect {
       case Left(throwable) => Effect.unexpectedError(throwable)
       case Right(e)        => Effect.error(mapper(e))
     }
 
+  /** Describes converting unexpected error of this effect into another unexpected error to build a new effect failing unexpectedly with
+    * converted unexpected error
+    *
+    * @param mapper
+    *   conversion function
+    *
+    * @return
+    *   an effect describing converting unexpected error of this effect into another unexpected error to build a new effect failing
+    *   unexpectedly with converted unexpected error
+    */
   final def mapUnexpectedError(mapper: Throwable => Throwable): Effect[A] =
     handleAllErrorsEffect {
       case Left(throwable) => Effect.unexpectedError(mapper(throwable))
@@ -338,12 +443,7 @@ sealed trait Effect[+A] { self =>
     }
 
   final def ensuring(finalizer: => Effect[Any]): Effect[A] =
-    foldEffect {
-      case Result.Value(a)                   => finalizer.mapDiscarding(a)
-      case Result.Error(e)                   => finalizer and Effect.error(e)
-      case Result.Interrupted                => finalizer and Effect.callback(callback => callback(Result.Interrupted))
-      case Result.UnexpectedError(throwable) => finalizer and Effect.unexpectedError(throwable)
-    }
+    foldEffect(result => finalizer and Effect.callback(complete => complete(result)))
 
   final def on(executor: ExecutionContextExecutor): Effect[A] =
     Effect.On(self, executor)
@@ -400,7 +500,7 @@ object Effect {
 
   def unexpectedError(throwable: Throwable): Effect[Nothing] = Error(Left(throwable))
 
-  def callback[A](register: (Result[A] => Any) => Any): Effect[A] = Callback(register)
+  def callback[A](complete: (Result[A] => Any) => Any): Effect[A] = Callback(complete)
 
   private[effect] final case class Value[+A](value: A) extends Effect[A] {
     override def toString: String = s"Value($value)"
@@ -418,7 +518,7 @@ object Effect {
     override def toString: String = s"Interrupted"
   }
 
-  private[effect] final case class Callback[+A](register: (Result[A] => Any) => Any) extends Effect[A] {
+  private[effect] final case class Callback[+A](complete: (Result[A] => Any) => Any) extends Effect[A] {
     override def toString: String = s"Callback"
   }
 
