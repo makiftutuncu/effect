@@ -1,4 +1,4 @@
-# Effect
+# Effect [![](https://img.shields.io/badge/docs-0.1.0-brightgreen.svg?style=for-the-badge&logo=scala&color=dc322f&labelColor=333333)](https://javadoc.io/doc/dev.akif/effect_3)
 
 ## Table of Contents
 
@@ -12,11 +12,11 @@
 
 Effect is a basic, home-made functional effect system with powerful errors.
 
-A value of type `Effect[A]` is a description of a computation that can produce a value of type `A`, can fail with an error `E` or can fail unexpectedly with a `Throwable`.
+A value of type `Effect[A]` is a description of a computation that can produce a value of type `A`, can fail with an error `E`, can fail unexpectedly with a `Throwable` or can be interrupted.
 
 Effect has only one type parameter. `Effect[A]` is mentally equivalent to `ZIO[Any, E, A]` where error type `E` is fixed to the error model [`effect.E`](core/src/main/scala/effect/E.scala).
 
-Effect is **not intended to be a silver bullet**, it is just a functional effect.
+Effect is **only a functional effect and not a complete solution to everything**.
 
 ## Installation
 
