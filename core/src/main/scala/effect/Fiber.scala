@@ -100,8 +100,22 @@ object Fiber {
       val isRunning: Boolean = this.isInstanceOf[Running]
     }
 
-    private def trace(message: String): Unit =
-      if (traceEnabled) println(s"[${Instant.now}] [F$idString] [I${instructionCounter.get}] $message")
+    private def trace(message: String, throwable: Option[Throwable] = None): Unit =
+      if (traceEnabled) {
+        println(s"""
+                   |> ${Instant.now}
+                   |> Fiber: $idString
+                   |> Instruction: $instruction
+                   |> Instruction #: ${instructionCounter.get}
+                   |> Thread: ${Thread.currentThread.getName}
+                   |> State: ${state.get().name}
+                   |> Looping: ${looping.get}
+                   |> Is Interruptible: ${isInterruptible.get}
+                   |> Is Interrupting: ${isInterrupting.get}
+                   |> Is Interrupted: ${interrupted.get}
+                   |$message""".stripMargin)
+        throwable.foreach(_.printStackTrace())
+      }
 
     private def setLooping(looping: Boolean): Unit = {
       val oldLooping = self.looping.getAndSet(looping)
@@ -114,7 +128,6 @@ object Fiber {
     }
 
     private def switchToExecutor(executor: ExecutionContextExecutor): Unit = {
-      trace(s"switching executor to $executor")
       setLooping(false)
       self.executor.set(executor)
       executor.execute(() => {
@@ -188,30 +201,26 @@ object Fiber {
     }
 
     private def findNextFold(): Effect.Fold[Any, Any] = {
-      var trying       = true
-      var continuation = null.asInstanceOf[Continuation]
-
-      while (trying) {
-        if (continuations.isEmpty) {
-          trying = false
-        } else {
-          continuation = continuations.pop()
-          trying = !continuation.isInstanceOf[Effect.Fold[_, _]]
+      while (continuations.nonEmpty) {
+        val continuation = continuations.pop()
+        if (continuation.isInstanceOf[Effect.Fold[_, _]]) {
+          return continuation.asInstanceOf[Effect.Fold[Any, Any]]
         }
       }
 
-      continuation.asInstanceOf[Effect.Fold[Any, Any]]
+      null
     }
 
     private def loop(): Unit =
       while (looping.get() && state.get().isRunning) {
         instructionCounter.incrementAndGet()
-        trace(s"instruction: $instruction")
+        // trace(s"instruction: $instruction")
         try {
           if (interrupted.get && isInterruptible.get && !isInterrupting.get) {
             trace("starting to interrupt")
             isInterrupting.set(true)
-            continuations.push(_ => instruction)
+            val newContinuation: Continuation = _ => instruction
+            continuations.push(newContinuation)
             instruction = Effect.Interrupted
           } else {
             instruction match {
@@ -236,7 +245,7 @@ object Fiber {
                 setLooping(false)
                 register {
                   case Result.UnexpectedError(throwable) =>
-                    trace(s"callback completed: unexpected error $throwable")
+                    trace(s"callback completed: unexpected error", Some(throwable))
                     handleErrorOrFailLoop(Left(throwable))
 
                   case Result.Interrupted =>
@@ -285,7 +294,7 @@ object Fiber {
           }
         } catch {
           case NonFatal(throwable) =>
-            trace(s"caught unexpected error $throwable")
+            trace(s"caught unexpected error", Some(throwable))
             handleErrorOrFailLoop(Left(throwable))
         }
       }

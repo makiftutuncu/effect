@@ -28,6 +28,9 @@ trait TestSuite extends FunSuite with TestData {
     result
   }
 
+  def assertTakesAboutMillis[A](millis: Long, tolerance: Long = 50L)(action: => A)(using Location): A =
+    assertTakesMillisBetween(Math.max(0, millis - tolerance), millis + tolerance)(action)
+
   def assertEffectTakesMillisBetween[A](min: Long, max: Long)(effect: => Effect[A])(using Location): Result[A] =
     assertTakesMillisBetween(min, max)(effect.unsafeRun(traceEnabled = traceEnabled))
 

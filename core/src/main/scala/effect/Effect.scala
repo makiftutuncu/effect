@@ -442,27 +442,86 @@ sealed trait Effect[+A] { self =>
       case Right(e)        => Effect.error(e)
     }
 
+  /** Describes running given effect as a finalizer after this effect completes in any way
+    *
+    * @param finalizer
+    *   an effect to run as a finalizer
+    *
+    * @return
+    *   an effect describing running given effect runs as a finalizer after this effect completes in any way
+    */
   final def ensuring(finalizer: => Effect[Any]): Effect[A] =
     foldEffect(result => finalizer and Effect.callback(complete => complete(result)))
 
+  /** Describes shifting execution of this effect from current execution context to given execution context, then shifts it back
+    *
+    * @param executor
+    *   a new execution context in which to run this effect
+    *
+    * @return
+    *   an effect describing shifting execution of this effect from current execution context to given execution context, then shifting it
+    *   back
+    */
   final def on(executor: ExecutionContextExecutor): Effect[A] =
     Effect.On(self, executor)
 
+  /** Describes repeating this effect given number of times, as long as it is successful, ignoring its success value
+    *
+    * @param times
+    *   number of times this effect is to be repeated
+    *
+    * @return
+    *   an effect describing repeating this effect given number of times, as long as it is successful, ignoring its success value
+    */
   final def repeat(times: Int): Effect[Unit] =
     times match {
       case t if t <= 0 => Effect.unit
       case t           => self and repeat(t - 1)
     }
 
+  /** Describes repeating this effect forever, as long as it is successful, ignoring its success value
+    *
+    * @return
+    *   an effect describing repeating this effect forever, as long as it is successful, ignoring its success value
+    */
   final def forever: Effect[Nothing] =
     self and self.forever
 
+  /** Describes delaying execution of this effect for given duration in milliseconds
+    *
+    * @param millis
+    *   duration for which to delay execution of this effect
+    *
+    * @return
+    *   an effect describing delaying execution of this effect for given duration in milliseconds
+    *
+    * @see
+    *   [[java.lang.Thread.sleep]]
+    */
   final def delayed(millis: Long): Effect[A] =
     Effect(Thread.sleep(millis)) and self
 
+  /** Describes this effect as an effect that cannot be interrupted
+    *
+    * @return
+    *   an effect describing this effect as an effect that cannot be interrupted
+    */
   final def uninterruptible: Effect[A] =
     Effect.SetUninterruptible(self)
 
+  /** Starts execution of this effect, running potentially side-effecting and/or blocking code
+    *
+    * @param executor
+    *   execution context in which this effect will run
+    * @param traceEnabled
+    *   whether to print debugging information as this effect runs
+    *
+    * @return
+    *   result of the execution
+    *
+    * @see
+    *   [[effect.Result]]
+    */
   final def unsafeRun(executor: ExecutionContextExecutor = Effect.defaultExecutor, traceEnabled: Boolean = false): Result[A] = {
     val latch  = new CountDownLatch(1)
     var result = null.asInstanceOf[Result[A]]
@@ -490,17 +549,55 @@ sealed trait Effect[+A] { self =>
 }
 
 object Effect {
-  private val defaultExecutor: ExecutionContextExecutor = ExecutionContext.global
 
+  /** Successful effect yielding Unit value */
   val unit: Effect[Unit] = Value(())
 
+  /** Creates an effect that, when successful, will produce given value, execution is suspended until the effect is run
+    *
+    * @param a
+    *   success value to produce
+    *
+    * @tparam A
+    *   type of the value to produce
+    *
+    * @return
+    *   an effect that, when successful, will produce given value
+    */
   def apply[A](a: => A): Effect[A] = Suspend(() => a)
 
+  /** Creates an effect that fails with given error
+    *
+    * @param e
+    *   error to produce
+    *
+    * @return
+    *   an effect that fails with given error
+    */
   def error(e: E): Effect[Nothing] = Error(Right(e))
 
+  /** Creates an effect that fails with given unexpected error
+    *
+    * @param throwable
+    *   unexpected error to produce
+    *
+    * @return
+    *   an effect that fails with given unexpected error
+    */
   def unexpectedError(throwable: Throwable): Effect[Nothing] = Error(Left(throwable))
 
+  /** Creates an effect from a callback-based code, leaving completion logic to the caller to bring arbitrary asynchronous code into a
+    * functional effect
+    *
+    * @param complete
+    *   completion callback to call with a result
+    *
+    * @return
+    *   an effect from a callback-based code
+    */
   def callback[A](complete: (Result[A] => Any) => Any): Effect[A] = Callback(complete)
+
+  private[effect] val defaultExecutor: ExecutionContextExecutor = ExecutionContext.global
 
   private[effect] final case class Value[+A](value: A) extends Effect[A] {
     override def toString: String = s"Value($value)"
