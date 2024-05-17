@@ -1,9 +1,11 @@
 package effect
 
+import e.scala.E
+
 import java.util.concurrent.atomic.AtomicInteger
 
 trait TestData {
-  val e: E = E("test")
+  val e: E = E.name("test")
 
   val exception: Exception = Exception("test")
 

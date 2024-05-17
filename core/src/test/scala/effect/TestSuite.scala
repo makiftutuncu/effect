@@ -1,9 +1,9 @@
 package effect
 
 import effect.Result
-import munit.{FunSuite, Location}
 
-import scala.concurrent.Future
+import e.scala.E
+import munit.{FunSuite, Location}
 
 trait TestSuite extends FunSuite with TestData {
   protected val traceEnabled: Boolean = false

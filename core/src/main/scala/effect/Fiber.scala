@@ -1,10 +1,12 @@
 package effect
 
+import e.scala.E
+
 import java.time.Instant
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong, AtomicReference}
 
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.concurrent.ExecutionContextExecutor
 import scala.util.control.NonFatal
 
 /** An asynchronous computation that is already running
@@ -203,7 +205,7 @@ object Fiber {
     private def findNextFold(): Effect.Fold[Any, Any] = {
       while (continuations.nonEmpty) {
         val continuation = continuations.pop()
-        if (continuation.isInstanceOf[Effect.Fold[_, _]]) {
+        if (continuation.isInstanceOf[Effect.Fold[?, ?]]) {
           return continuation.asInstanceOf[Effect.Fold[Any, Any]]
         }
       }

@@ -1,10 +1,12 @@
 package dev.akif.effect.examples
 
-import effect.{E, Effect, EffectApp}
+import effect.{Effect, EffectApp}
+
+import e.scala.E
 
 object Fork extends EffectApp {
   val program1: Effect[String] = Effect("hello")
-  val program2: Effect[Int]    = Effect.error(E("error"))
+  val program2: Effect[Int]    = Effect.error(E.name("error"))
 
   override def mainEffect(args: Array[String]): Effect[Any] =
     for {

@@ -16,6 +16,8 @@ object ForComprehension extends EffectApp {
       }
       result <- Effect(s"Result is $asyncResult")
     } yield {
+      println(asyncResult)
+      println(result)
       result
     }
 }

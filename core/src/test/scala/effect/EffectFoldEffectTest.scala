@@ -29,10 +29,10 @@ class EffectFoldEffectTest extends TestSuite {
 
     errorEffect
       .foldEffect {
-        case Result.Error(e) => Effect.error(e.withCode(1))
+        case Result.Error(e) => Effect.error(e.code(1))
         case result          => handlerEffect(result)
       }
-      .assertError(e.withCode(1))
+      .assertError(e.code(1))
 
     errorEffect
       .foldEffect {
