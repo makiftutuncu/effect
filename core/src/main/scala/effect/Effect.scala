@@ -1,11 +1,10 @@
 package effect
 
+import e.scala.E
+
 import java.util.concurrent.CountDownLatch
 
-import scala.annotation.{tailrec, targetName}
-import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
-import scala.util.control.NonFatal
 
 /** A description of a functional effect that has following characteristics when run:
   *
@@ -13,7 +12,7 @@ import scala.util.control.NonFatal
   *
   * <li>can produce a value of type A</li>
   *
-  * <li>can fail with an error [[effect.E]]</li>
+  * <li>can fail with an error [[e.scala.E]]</li>
   *
   * <li>can fail unexpectedly with a [[java.lang.Throwable]]</li>
   *
@@ -198,7 +197,7 @@ sealed trait Effect[+A] { self =>
     * @return
     *   an effect describing running this effect and also running given effect sequentially regardless of the result of this one
     */
-  final def also[B](that: => Effect[B]): Effect[A] =
+  final infix def also[B](that: => Effect[B]): Effect[A] =
     flatMap { a =>
       that.foldEffect(_ => Effect(a))
     }
@@ -219,7 +218,7 @@ sealed trait Effect[+A] { self =>
     * @see
     *   [[effect.Effect.fork]]
     */
-  final def alsoPar[B](that: => Effect[B]): Effect[A] =
+  final infix def alsoPar[B](that: => Effect[B]): Effect[A] =
     flatMap { a =>
       that.fork.mapDiscarding(a)
     }
@@ -235,7 +234,7 @@ sealed trait Effect[+A] { self =>
     * @return
     *   an effect describing running this effect and running given effect sequentially
     */
-  final def and[B](that: => Effect[B]): Effect[B] =
+  final infix def and[B](that: => Effect[B]): Effect[B] =
     combine(that)((_, b) => b)
 
   /** Describes running this effect and running given effect in parallel, ignoring the result of this effect
@@ -254,7 +253,7 @@ sealed trait Effect[+A] { self =>
     * @see
     *   [[effect.Effect.fork]]
     */
-  final def andPar[B](that: => Effect[B]): Effect[B] =
+  final infix def andPar[B](that: => Effect[B]): Effect[B] =
     combinePar(that)((_, b) => b)
 
   /** Describes combining success values of this effect and given effect sequentially into a tuple
@@ -268,7 +267,7 @@ sealed trait Effect[+A] { self =>
     * @return
     *   an effect describing combining success values of this effect and given effect sequentially into a tuple
     */
-  final def tuple[B](that: => Effect[B]): Effect[(A, B)] =
+  final infix def tuple[B](that: => Effect[B]): Effect[(A, B)] =
     combine(that)((a, b) => (a, b))
 
   /** Describes combining success values of this effect and given effect in parallel into a tuple
@@ -287,7 +286,7 @@ sealed trait Effect[+A] { self =>
     * @see
     *   [[effect.Effect.fork]]
     */
-  final def tuplePar[B](that: => Effect[B]): Effect[(A, B)] =
+  final infix def tuplePar[B](that: => Effect[B]): Effect[(A, B)] =
     combinePar(that)((a, b) => (a, b))
 
   /** Describes folding over the result of this effect, handling all possible outcomes to build a new effect

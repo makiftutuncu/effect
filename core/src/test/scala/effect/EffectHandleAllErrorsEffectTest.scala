@@ -10,7 +10,7 @@ class EffectHandleAllErrorsEffectTest extends TestSuite {
 
   test("handles error and unexpected error of an effect that completes with error to run given effect") {
     errorEffect.handleAllErrorsEffect(allErrorsHandlerEffect).assertValue(s"error: $e")
-    errorEffect.handleAllErrorsEffect(_ => Effect.error(e.withCode(1))).assertError(e.withCode(1))
+    errorEffect.handleAllErrorsEffect(_ => Effect.error(e.code(1))).assertError(e.code(1))
     errorEffect.handleAllErrorsEffect(_ => unexpectedErrorEffect).assertUnexpectedError(exception)
     errorEffect.handleAllErrorsEffect(_ => interruptedEffect).assertInterrupted
   }

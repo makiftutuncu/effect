@@ -14,7 +14,7 @@ Effect is a basic, home-made functional effect system with powerful errors.
 
 A value of type `Effect[A]` is a description of a computation that can produce a value of type `A`, can fail with an error `E`, can fail unexpectedly with a `Throwable` or can be interrupted.
 
-Effect has only one type parameter. `Effect[A]` is mentally equivalent to `ZIO[Any, E, A]` where error type `E` is fixed to the error model [`effect.E`](core/src/main/scala/effect/E.scala).
+Effect has only one type parameter. `Effect[A]` is mentally equivalent to `ZIO[Any, E, A]` where error type `E` is fixed to the error model [`e.scala.E`](https://github.com/makiftutuncu/e/tree/master/e-scala#1-e).
 
 Effect is **only a functional effect and not a complete solution to everything**.
 
