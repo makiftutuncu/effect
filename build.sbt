@@ -37,6 +37,9 @@ def artifactSettings(shouldPublish: Boolean): Seq[Setting[?]] =
     Compile / packageBin / publishArtifact := shouldPublish,
     Compile / packageSrc / publishArtifact := shouldPublish,
     Compile / packageDoc / publishArtifact := shouldPublish,
+    Test / packageBin / publishArtifact := false,
+    Test / packageSrc / publishArtifact := false,
+    Test / packageDoc / publishArtifact := false,
     publish / skip                         := !shouldPublish,
     releasePublishArtifactsAction          := PgpKeys.publishSigned.value
   )
@@ -57,7 +60,10 @@ val releaseSettings: Seq[Setting[?]] = {
 
   val publishSettings: Seq[Setting[?]] =
     Seq(
-      credentials += Credentials("Sonatype Nexus Repository Manager", "oss.sonatype.org", sonatypeUser, sonatypePass),
+      credentials ++= Seq(
+        Credentials("Sonatype Nexus Repository Manager", "oss.sonatype.org", sonatypeUser, sonatypePass),
+        Credentials("GnuPG Key ID", "gpg", "3D5A9AE9F71508A0D85E78DF877A4F41752BB3B5", "ignored")
+      ),
       pomIncludeRepository := { _ => false },
       publishMavenStyle    := true,
       publishTo            := Some("releases" at "https://oss.sonatype.org/service/local/staging/deploy/maven2")
@@ -82,8 +88,11 @@ val releaseSettings: Seq[Setting[?]] = {
     )
   }
 
+
   publishSettings ++ releaseProcessSettings
 }
+
+usePgpKeyHex("3D5A9AE9F71508A0D85E78DF877A4F41752BB3B5")
 
 inThisBuild(commonSettings ++ releaseSettings)
 

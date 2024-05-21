@@ -1,4 +1,4 @@
-# Effect [![](https://img.shields.io/badge/docs-0.2.0-brightgreen.svg?style=for-the-badge&logo=scala&color=dc322f&labelColor=333333)](https://javadoc.io/doc/dev.akif/effect-core_3)
+# Effect [![](https://img.shields.io/badge/docs-0.3.0-brightgreen.svg?style=for-the-badge&logo=scala&color=dc322f&labelColor=333333)](https://javadoc.io/doc/dev.akif/effect-core_3)
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ Effect is **only a functional effect and not a complete solution to everything**
 Add following to your `build.sbt` (for now, Scala 3 only):
 
 ```scala
-libraryDependencies += "dev.akif" %% "effect-core" % "0.2.0"
+libraryDependencies += "dev.akif" %% "effect-core" % "0.3.0"
 ```
 
 ## Development and Testing
