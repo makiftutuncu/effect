@@ -4,7 +4,7 @@ import sbtrelease.ReleaseStateTransformations.*
 // Reload SBT automatically after changes to this file
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
-val eVersion                       = "3.0.0"
+val eVersion                       = "3.0.1"
 val scalafixOrganizeImportsVersion = "0.6.0"
 val munitVersion                   = "0.7.29"
 
