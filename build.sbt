@@ -6,7 +6,7 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 
 val eVersion                       = "3.0.1"
 val scalafixOrganizeImportsVersion = "0.6.0"
-val munitVersion                   = "1.0.0"
+val munitVersion                   = "1.0.2"
 
 val e                       = "dev.akif"             %% "e-scala"          % eVersion
 val scalafixOrganizeImports = "com.github.liancheng" %% "organize-imports" % scalafixOrganizeImportsVersion
